@@ -209,7 +209,7 @@ except ImportError:
 # ══════════════════════════════════════════════════════════════════════════════
 #  定数・設定
 # ══════════════════════════════════════════════════════════════════════════════
-APP_VERSION  = "v2.32"
+APP_VERSION  = "v2.32.1"
 APP_NAME     = "PNG Metadata Viewer"
 APP_AUTHOR   = "nemot"
 _APP_ICON_B64 = (
@@ -4862,6 +4862,18 @@ class FullViewer(QDialog):
         self._overlay_item.setZValue(10)
         self._overlay_item.hide()
 
+        # [v2.32.1] 音量 OSD: 没入モードで info_lbl が隠れても音量変更が見えるよう、
+        # シーンウィジェットの子として常に最前面に浮遊させる。
+        self._vol_osd = QLabel(self._scene_widget)
+        self._vol_osd.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self._vol_osd.setStyleSheet(
+            "QLabel{background:rgba(0,0,0,190);color:#4fc3f7;"
+            "padding:6px 12px;border-radius:4px;font-size:11pt;font-weight:bold;}")
+        self._vol_osd.hide()
+        self._vol_osd_timer = QTimer(self)
+        self._vol_osd_timer.setSingleShot(True)
+        self._vol_osd_timer.timeout.connect(self._vol_osd.hide)
+
         root.addWidget(self._scene_widget, 1)
 
         # ── シークバー（下部）
@@ -5020,6 +5032,10 @@ class FullViewer(QDialog):
             sw = getattr(self, "_scene_widget", None)
             if sw is not None and obj is sw.viewport():
                 self._apply_view()
+                # [v2.32.1] リサイズに合わせて音量 OSD の位置も更新
+                osd = getattr(self, "_vol_osd", None)
+                if osd is not None and osd.isVisible():
+                    self._update_osd_pos()
         return super().eventFilter(obj, e)
 
     # ── 画像表示 ──────────────────────────────────────────────────────────
@@ -5514,10 +5530,36 @@ class FullViewer(QDialog):
         self._flash_volume("voice", new)
 
     def _flash_volume(self, kind: str, value: int):
-        """音量変更を一時的に info_lbl に表示（2秒で元に戻す）。"""
+        """音量変更を OSD で 2 秒間表示。没入モードでも info_lbl 非表示に左右されない。
+        info_lbl にも同時書き込み（非没入時はツールバーに出る）はせず、
+        OSD のみで統一する（二重表示を避ける）。"""
         label = T("BGM") if kind == "bgm" else T("音声")
-        self._info_lbl.setText(f"🔊 {label}: {value}%")
-        QTimer.singleShot(2000, self._show_image)
+        osd = getattr(self, "_vol_osd", None)
+        if osd is None:
+            # 初期化前フォールバック: info_lbl 経由
+            self._info_lbl.setText(f"🔊 {label}: {value}%")
+            QTimer.singleShot(2000, self._show_image)
+            return
+        osd.setText(f"🔊 {label}: {value}%")
+        self._update_osd_pos()
+        osd.show(); osd.raise_()
+        self._vol_osd_timer.start(2000)
+
+    def _update_osd_pos(self):
+        """音量 OSD をシーンウィジェット左下に寄せる（リサイズ/表示の都度呼ぶ）。"""
+        osd = getattr(self, "_vol_osd", None)
+        sw = getattr(self, "_scene_widget", None)
+        if osd is None or sw is None:
+            return
+        osd.adjustSize()
+        h = osd.sizeHint().height()
+        w = osd.sizeHint().width()
+        x = 12
+        y = max(12, sw.height() - h - 12)
+        # 極小サイズ時のみ右端に収める
+        if x + w > sw.width() - 12:
+            x = max(6, sw.width() - w - 6)
+        osd.move(x, y)
 
     def _open_settings_from_viewer(self):
         """⚙ ボタンハンドラ。parent の MainWindow._open_settings を呼ぶ。"""

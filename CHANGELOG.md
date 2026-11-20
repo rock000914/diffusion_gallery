@@ -4,6 +4,21 @@ PNG/画像メタデータビューア (PySide6版) — 更新履歴
 
 ---
 
+## [v2.32.1] 2026-11-21
+
+### バグ修正
+- **没入モードで音量 OSD が見えなかった問題を修正**。v2.32 の音量ホットキー表示は `info_lbl`（ツールバー内）に書き込んでいたが、Space/F11 で `_toolbar.hide()` されると通知自体も消える。`.hide()` 前に `_show_image` の `setText` → `hide` 復元タイマーも走るため、ユーザーは音量変更を検知できなかった。
+  - `FullViewer.__init__` の `_scene_widget` 直下に浮遊 `QLabel _vol_osd`（`WA_TransparentForMouseEvents`、暗色半透明背景+シアン文字）を追加。`_vol_osd_timer` (2 秒, singleShot) で自動 hide。
+  - `_flash_volume(kind, value)` は OSD の `setText` → `_update_osd_pos` → `show/raise_` → `timer.start(2000)` の流れに統一。連続キー入力時はタイマーが再スタートし、2 秒表示が伸びる。OSD 未作成時は info_lbl にフォールバック。
+  - `_update_osd_pos()` はシーン左下 12px マージン、極小サイズ時のみ右端に収める。viewport の `QEvent.Type.Resize` を処理する `eventFilter` 内で再配置。
+  - info_lbl は画像情報のみに専念し、音量変更では触らない（二重表示回避）。
+
+### 内部
+- `APP_VERSION` を `v2.32` → `v2.32.1` へパッチ bumps。
+- `.tmp/smoke_v232.py` に OSD 表示 + タイマー起動 + 連続押下時のテキスト切替アサーションを追加。
+
+---
+
 ## [v2.32] 2026-11-21
 
 ### 新機能
