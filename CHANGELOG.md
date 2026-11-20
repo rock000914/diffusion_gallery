@@ -4,6 +4,21 @@ PNG/画像メタデータビューア (PySide6版) — 更新履歴
 
 ---
 
+## [v2.38.2] 2026-11-21
+
+### 新機能（ボイス音量を 100% 超に増幅）
+- **症状と原因**: 「音声だけ小さい」報告。実測で元ボイスが BGM より約 **14.6dB 低い**（voice RMS −26.2dBFS・peak 0.24 / BGM RMS −11.6dBFS）。voice 音量設定は既に 100% だったが、`QAudioOutput.setVolume` は 1.0 超を内部で 1.0 にクランプするため（probe 実測）、スライダーを上げてもこれ以上大きくならなかった。
+- **再生前 PCM 増幅で解決**: `_prepare_voice_source()` を追加（[png_viewer.py:5949](file:///N:/マイドライブ/png_viwer/png_viewer.py#L5949)）。voice 音量が 100% 超のとき `soundfile`+`numpy` で元音声を gain 倍→クリップし、`%LOCALAPPDATA%\diffusion_gallery\voice_boost\boost_<hash>.wav` の temp を再生（`_play_voice_current` から呼ぶ [png_viewer.py:5939](file:///N:/マイドライブ/png_viwer/png_viewer.py#L5939)）。100% 以下／非依存環境／読み込み失敗は元パスへ退避。temp 名は 元 path+mtime+size 由来なので音量を変えても同じ tmp を上書きし増殖しない。同一音量は dict キャッシュで再計算しない。
+- **voice 音量上限 400%**: 定数 `VOLUME_MAX = 400`（[png_viewer.py:229](file:///N:/マイドライブ/png_viwer/png_viewer.py#L229)）。`_set_volume` は kind 別上限（voice=400 / bgm=100）で、QAudioOutput には常に `min(1.0)` を当て超分は temp 側で掛ける（[png_viewer.py:6044](file:///N:/マイドライブ/png_viwer/png_viewer.py#L6044)）。環境設定と 🔊 ポップアップの voice スライダーも 0〜400%（[png_viewer.py:7712](file:///N:/マイドライブ/png_viwer/png_viewer.py#L7712) / [png_viewer.py:6216](file:///N:/マイドライブ/png_viwer/png_viewer.py#L6216)）。peak 0.24 のため 400% でも無クリップ。
+- **依存の optional 化**: `HAS_NUMPY` / `HAS_SOUNDFILE`（[png_viewer.py:215](file:///N:/マイドライブ/png_viwer/png_viewer.py#L215)）。soundfile が無い配布環境では自動で 100% クランプへ退避（既存 `HAS_LIBROSA` と同じ方針）。
+- **反映タイミング**: temp 増幅は再生前に適用するため、再生中に 100% 超へ変えると次の音声再生から効く。
+- `APP_VERSION` を v2.38.1 → **v2.38.2**。
+
+### 検証
+- `.tmp/smoke_v238_2.py`（**10 check**）: 100% 以下は元パス／temp を作らない、300% で temp 生成・**RMS 約3.00x(+9.5dB)**・peak 0.72 で無クリップ・`APP_DIR/voice_boost` 内、同一音量はキャッシュ hit、400% も無クリップ、読み込み失敗は元パス退避。実測 元 rms=0.0488 → 300% rms=0.1465。既存 smoke（v2.38.1/v2.38/v2.37/v2.36）も回帰 PASS。`py_compile` OK。
+
+---
+
 ## [v2.38.1] 2026-11-21
 
 ### バグ修正（スライドショー再生ボタンの連打で FullViewer だけ落ち・音楽だけ残り再生される）
