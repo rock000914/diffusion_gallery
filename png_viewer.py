@@ -191,7 +191,7 @@ except ImportError:
 # ══════════════════════════════════════════════════════════════════════════════
 #  定数・設定
 # ══════════════════════════════════════════════════════════════════════════════
-APP_VERSION  = "v2.27"
+APP_VERSION  = "v2.28"
 APP_NAME     = "PNG Metadata Viewer"
 APP_AUTHOR   = "nemot"
 _APP_ICON_B64 = (
@@ -316,6 +316,7 @@ _I18N_TABLE = {
     'CSVを出力しました:\n': {"en": 'CSV exported:\n', "zh": '已导出 CSV：\n', "ko": 'CSV 출력 완료:\n'},
     'CSV出力': {"en": 'CSV export', "zh": 'CSV 导出', "ko": 'CSV 출력'},
     'Civitaiで検索': {"en": 'Search on Civitai', "zh": '在 Civitai 上搜索', "ko": 'Civitai에서 검색'},
+    'F': {"en": 'F', "zh": 'F', "ko": 'F'},
     'F1 キーボードショートカット': {"en": 'F1 Keyboard shortcuts', "zh": 'F1 键盘快捷键', "ko": 'F1 키보드 단축키'},
     'GB\n現行形式 .raw: ': {"en": 'GB\nCurrent .raw format: ', "zh": 'GB\n当前格式 .raw：', "ko": 'GB\n현재 형식 .raw: '},
     'LoRAを選択すると詳細が表示されます': {"en": 'Select a LoRA to see details', "zh": '选择 LoRA 后将显示详情', "ko": 'LoRA를 선택하면 상세가 표시됩니다'},
@@ -700,6 +701,7 @@ _I18N_TABLE = {
     '読み込み中...': {"en": 'Loading...', "zh": '正在读取...', "ko": '읽는 중...'},
     '読み込む拡張子（チェック=有効）': {"en": 'Extensions to load (checked = enabled)', "zh": '要读取的扩展名（勾选=启用）', "ko": '불러올 확장자 (체크=활성)'},
     '読み込めませんでした: ': {"en": 'Could not load: ', "zh": '无法读取：', "ko": '불러올 수 없습니다: '},
+    '送り間隔 (フレーム, 60fps 基準) / 1F≈16.67ms / 60F=1秒 / 180F=3秒': {"en": 'Interval (frames, 60fps base) / 1F≈16.67ms / 60F=1s / 180F=3s', "zh": '间隔（帧，60fps 基准）/ 1F≈16.67ms / 60F=1秒 / 180F=3秒', "ko": '간격 (프레임, 60fps 기준) / 1F≈16.67ms / 60F=1초 / 180F=3초'},
     '適用': {"en": 'Apply', "zh": '应用', "ko": '적용'},
     '配置': {"en": 'Layout', "zh": '排列', "ko": '배치'},
     '重複': {"en": 'Duplicates', "zh": '重复', "ko": '중복'},
@@ -4700,10 +4702,11 @@ class FullViewer(QDialog):
                 f"QPushButton:hover{{background:#333;border-color:{PAL['accent']}}}")
             return b
 
-        self._ss_spin = QSpinBox(); self._ss_spin.setRange(1,30); self._ss_spin.setValue(3)
+        self._ss_spin = QSpinBox(); self._ss_spin.setRange(1,1800); self._ss_spin.setValue(180)
+        self._ss_spin.setToolTip(T("送り間隔 (フレーム, 60fps 基準) / 1F≈16.67ms / 60F=1秒 / 180F=3秒"))
         # 幅48px だと up/down ボタンと数字が重なる（実環境で「3」が矢印の下に沈む）
         # → ボタン幅 16px + 数字側 padding を確保し、sub-control を明示配置する
-        self._ss_spin.setFixedWidth(72); self._ss_spin.setFixedHeight(28)
+        self._ss_spin.setFixedWidth(80); self._ss_spin.setFixedHeight(28)
         self._ss_spin.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._ss_spin.setStyleSheet(
             f"QSpinBox{{background:#1e1e1e;color:{PAL['fg1']};"
@@ -4729,7 +4732,7 @@ class FullViewer(QDialog):
             f"QPushButton{{background:#1e1e1e;color:{PAL['red']};border:1px solid #333;border-radius:4px;padding:0 8px;}}"
             f"QPushButton:hover{{background:{PAL['red']};color:#fff;}}")
 
-        for w in [self._ss_btn, QLabel(T("秒")), self._ss_spin, self._fs_btn,
+        for w in [self._ss_btn, QLabel(T("F")), self._ss_spin, self._fs_btn,
                   self._fit_btn, rot_btn, zin_btn, zout_btn, z1_btn, close_btn]:
             if isinstance(w, QLabel):
                 w.setStyleSheet(f"color:{PAL['fg2']};")
@@ -5246,7 +5249,8 @@ class FullViewer(QDialog):
         if self._ss_job is None:
             self._ss_job = QTimer(self)
             self._ss_job.timeout.connect(self._next)
-        interval = max(500, self._ss_spin.value() * 1000)
+        # 60fps 基準のフレーム数 → msec（Qt タイマー下限 16ms ≈ 1F）
+        interval = max(16, int(self._ss_spin.value() * 1000 / 60))
         self._ss_job.start(interval)
         self._ss_btn.setText("⏸ SS")
 
