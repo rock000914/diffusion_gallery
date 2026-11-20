@@ -1068,63 +1068,106 @@ SORT_LABEL_KEYS = {v: k for k, v in SORT_KEYS}
 # ※ プルダウン表示時は「実在する系統のみ」を _refresh_base_model_filter() が絞り込む。
 BASE_MODEL_GROUPS = [
     ("",            T("全て")),
-    ("anima",       "Anima"),
+    ("sd",          "SD"),
+    ("sdxl",        "SDXL"),
+    ("pony",        "Pony"),
     ("illustrious", "Illustrious"),
     ("noobai",      "NoobAI"),
-    ("pony",        "Pony"),
-    ("qwen",        "Qwen"),
-    ("sdxl",        "SDXL"),
     ("flux",        "Flux"),
+    ("klein",       "Klein"),
+    ("krea",        "Krea"),
+    ("qwen",        "Qwen"),
+    ("lumina",      "Lumina"),
+    ("anima",       "Anima"),
     ("minimax",     "MiniMax"),
+    ("wan",         "Wan"),
+    ("zit",         "ZIT"),
+    ("ernie",       "ERNIE"),
+    ("pid",         "PiD"),
+    ("moss",        "MOSS"),
     ("other",       T("その他")),
 ]
 
+# ── 系統判定テーブル（先勝ち優先）───────────────────────────────────────────
+# [v2.36] 個別モデル名（nova3DCGAM 等）の列挙ではなく、ベースモデルの語で系統を
+# 判定する。エントリは (系統ID, モデル名で探すトークン列)。先勝ち順。
+# 既定は部分一致（sdxl は xl より先に評価して SD へ誤爆させない）。
+# 誤爆しやすい語のみ _LINEAGE_BOUND_TOKENS で単語境界照合に切り替える。
+# 新系統はここで1行追加するだけ（BASE_MODEL_GROUPS と LINEAGE_BADGES にも対応する ID を足す）。
+_LINEAGE_NAME_RULES = [
+    ("sdxl",        ("sdxl", "sd xl", "sd-xl", "sd_xl")),
+    ("illustrious", ("illustrious", "ilustrious", "illust", "ilxl")),
+    ("pony",        ("pony",)),
+    ("noobai",      ("noobai", "noob")),
+    ("qwen",        ("qwen",)),
+    ("lumina",      ("lumina",)),
+    ("minimax",     ("minimax", "mini_max", "mini max")),
+    ("krea",        ("krea",)),
+    ("klein",       ("klein",)),
+    ("flux",        ("flux",)),
+    ("anima",       ("anima",)),
+    ("zit",         ("z-image", "zimage", "z_image")),
+    ("wan",         ("wan2", "wan 2", "wan2.1", "wan2.2", "wan_2")),
+    ("sd",          ("sd", "sd1", "sd2", "sd-1", "sd-2", "1.5", "14")),
+    ("sdxl",        ("xl",)),
+    ("ernie",       ("ernie",)),
+    ("pid",         ("pid",)),
+    ("moss",        ("moss",)),
+    ("zit",         ("zit",)),
+]
+# 英単語や無関係ファイル名へ部分一致で誤爆しやすい語だけ単語境界で照合する
+# （anima→animal, xl→pixel系, wan2→swan, pid→rapid, moss→mossy, sd/1.5/14→版数等）。
+_LINEAGE_BOUND_TOKENS = {"sd", "xl", "zit", "pid", "moss", "wan2", "anima", "1.5", "14"}
+# 各語を (文字列, 単語境界フラグ) に展開するキャッシュ。
+_LINEAGE_TOKENS = [(key, [(t, t in _LINEAGE_BOUND_TOKENS) for t in toks])
+                   for key, toks in _LINEAGE_NAME_RULES]
+
+def _lineage_token_hit(token: str, word_bound: bool, text: str) -> bool:
+    """text（小文字化済み）に token が含まれるか。word_bound なら単語境界で照合。"""
+    if word_bound:
+        pat = r"(?<![a-z0-9])" + re.escape(token) + r"(?![a-z0-9])"
+        return re.search(pat, text, re.ASCII) is not None
+    return token in text
+
 def classify_base_model(model: str, raw: str = "") -> str:
-    """モデル名（必要なら生メタの生成環境指紋）から系統IDを判定する。
-    空文字は空を返す。判定順序が優先度になる（例: smoothMixNoobai_ponyV3 → pony）。
-    [v2.36] 名称に "anima" を含まないリネーム済み Anima 派生（nova3DCGAM 等）は、
-    名称だけでは "other" に落ちる。Forge Neo / ComfyUI の Anima はテキストエンコーダに
-    Qwen3-0.6B（qwen_3_06b）を使うため、これを生成環境指紋として補完判定する。
-    純正 Qwen-Image は別の TE を使うので "qwen" とは混同しない。
-    ※ 生メタ全体から "anima" を素探しすると "animal" 等で誤爆するため、
-      モジュール名の精密照合のみを用いる（プロンプト本文は検索しない）。
+    """モデル名から系統IDを判定する。空名は空を返す。
+    _LINEAGE_NAME_RULES の先勝ち順で「モデル名のみ」を照合する（プロンプト本文を
+    含む生メタを語でスキャンすると "animal"→anima 等の誤爆が起きるため、名前に限定）。
+    名前で系統が決まらない場合のみ、生成環境の指紋（Anima の qwen_3_06b TE）を
+    生メタから補完判定する。純正 Qwen-Image は別 TE なので "qwen" のままで混同しない。
     """
-    n = (model or "").lower()
-    if not n.strip():
+    n = (model or "").lower().strip()
+    if not n:
         return ""
-    if "anima" in n:
-        return "anima"
-    if "illustrious" in n or "illust" in n or "ilustrious" in n or "ilxl" in n:
-        return "illustrious"
-    if "pony" in n:
-        return "pony"
-    if "noobai" in n or "noob" in n:
-        return "noobai"
-    if "minimax" in n or "mini_max" in n or "mini max" in n:
-        return "minimax"
-    if "qwen" in n:
-        return "qwen"
-    if "flux" in n:
-        return "flux"
-    if "sdxl" in n or "sd-xl" in n or "sd_xl" in n or "stable-diffusion-xl" in n:
-        return "sdxl"
+    for key, toks in _LINEAGE_TOKENS:
+        for tok, wb in toks:
+            if _lineage_token_hit(tok, wb, n):
+                return key
     r = (raw or "").lower()
-    if ("qwen_3_06b" in r or "qwen3_06b" in r
-            or "qwen_3_0_6b" in r or "qwen3-0.6b" in r):
+    if "qwen_3_06b" in r or "qwen3_06b" in r or "qwen_3_0_6b" in r or "qwen3-0.6b" in r:
         return "anima"
     return "other"
 
 # ── 系統バッジ（サムネイルのファイル名左に表示）─────────────────────────────
 # key: classify_base_model() の戻り値 / value: (3文字略称, 背景色)
 LINEAGE_BADGES = {
-    "anima":       ("ani", "#e67e22"),
+    "sd":          ("sd",  "#95a5a6"),
+    "sdxl":        ("sdx", "#e74c3c"),
+    "pony":        ("pon", "#9b59b6"),
     "illustrious": ("ill", "#3498db"),
     "noobai":      ("nai", "#27ae60"),
-    "pony":        ("pon", "#9b59b6"),
-    "qwen":        ("qwn", "#1abc9c"),
-    "sdxl":        ("sdx", "#e74c3c"),
     "flux":        ("flx", "#e91e63"),
+    "klein":       ("kln", "#5d6d7e"),
+    "krea":        ("kr",  "#af601a"),
+    "qwen":        ("qwn", "#1abc9c"),
+    "lumina":      ("lum", "#2e86c1"),
+    "anima":       ("ani", "#e67e22"),
     "minimax":     ("mmx", "#f39c12"),
+    "wan":         ("wan", "#16a085"),
+    "zit":         ("zit", "#c39bd3"),
+    "ernie":       ("ern", "#d4ac0d"),
+    "pid":         ("pid", "#cb4335"),
+    "moss":        ("mss", "#7d3c98"),
     "other":       ("etc", "#7f8c8d"),
 }
 
