@@ -4,6 +4,22 @@ PNG/画像メタデータビューア (PySide6版) — 更新履歴
 
 ---
 
+## [v2.38] 2026-11-21
+
+### 変更（アプリ名の正式決定: PNG Metadata Viewer → Diffusion Gallery）
+- **表示名を変更**: `APP_NAME` を `"PNG Metadata Viewer"` → **`"Diffusion Gallery"`** に [png_viewer.py:214](file:///N:/マイドライブ/png_viwer/png_viewer.py#L214)。ウィンドウタイトル（`setWindowTitle`）・バージョン情報ダイアログ・`QApplication.setApplicationName`・Windows の AppUserModelID（タスクバー/Alt+Tab）へ自動反映 [png_viewer.py:1000](file:///N:/マイドライブ/png_viwer/png_viewer.py#L1000) / [png_viewer.py:14205](file:///N:/マイドライブ/png_viwer/png_viewer.py#L14205)。ヘッダ docstring と [README.md](file:///N:/マイドライブ/png_viwer/README.md) の見出しも更新。
+- **データフォルダを改名＋自動移行**: 既定のデータ置き場を `AppData\Local\png_viewer` → **`AppData\Local\diffusion_gallery`** へ変更 [png_viewer.py:220-222](file:///N:/マイドライブ/png_viwer/png_viewer.py#L220-L222)。`_migrate_legacy_app_dir()` を追加し、**初回起動時**に旧フォルダから `settings.json` / `ratings.json` / `overlay_settings.json` / `bpm_cache.json` / `beat_cache.json` / `meta_cache.json` / `.meta_cache_version` / `thumbs/` / `logo/` を 1 度だけコピーする [png_viewer.py:960-989](file:///N:/マイドライブ/png_viwer/png_viewer.py#L960-L989)。
+  - **ガード**: 新しい `settings.json` が既にあれば移行しない（＝起動中の旧プロセスが後から `png_viewer` を上書きしても、新しい実体は最初に一度だけ取り込めば以降は新フォルダが正）。
+  - **除外**: 一時ファイル（`tmp*`）・バックアップ（`*.bak*` / `*backup*`）・再生成可能な `meta_cache.pkl` / `debug.log` は引き継がない。
+  - **非破壊**: 旧フォルダは削除せずそのまま保持（移行後にユーザーがゴミ箱行きで整理可能）。`thumb_cache_dir` を绝对パスで別ドライブへ移している設定は、`settings.json` ごと引継ぐため追加作業は不要。
+  - **反映の順序**: 実行中のビューアは旧コード・旧フォルダに書き続けるため、**全インスタンスを閉じてから新版を起動**するとその起動時に自動移行される（起動時に数百 MB の `meta_cache`/`thumbs` を 1 度コピーするため初回だけ数十秒かかる場合あり）。
+- **未変更**: 物理ファイル名 `png_viewer.py` / `png_viewer.spec`、リポジトリ `rock000914/png_viwer`、環境変数 `PNG_VIEWER_DEFAULT_FOLDER` は据え置き（今回のスコープ外）。旧 `png_viewer` 名義のデータフォルダは `AppData\Local\png_viewer_cache`（現行コードから参照されない遺跡）として残置。
+
+### 検証
+- `.tmp/smoke_v238.py`（**22 check**）: `APP_NAME`/`APP_DIR`/`LEGACY_APP_DIR`/`SETTINGS_FILE` の命名、源码の `png_viewer` リテラルがレガシー定数のみ、`_migrate_legacy_app_dir` が設定・各種キャッシュ・`thumbs/`・`logo/` を移行し `meta_cache.pkl`/`debug.log`/`tmp*`/`.bak`/`*backup*` を除外、旧フォルダ保持、**2 回目はガードで上書きしない**、旧フォルダ無しは no-op。**テストは `LOCALAPPDATA` を一時へ退避して実行し、実 AppData に `diffusion_gallery` を作らないことを確認**。既存 `smoke_v236`(79)/`smoke_v237`(25) も `LOCALAPPDATA` 退避で回帰 ALL PASS。`py_compile` OK。
+
+---
+
 ## [v2.37] 2026-11-21
 
 ### 変更（モデル欄・アドレス欄の横幅と並び替えの配置）

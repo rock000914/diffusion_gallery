@@ -1,6 +1,6 @@
-# PNG Metadata Viewer
+# Diffusion Gallery
 
-Stable Diffusion などの AI 生成画像を整理・閲覧するためのビューワーソフトです。
+Stable Diffusion などの AI 生成画像を整理・閲覧するためのビューワーソフトです（旧名: PNG Metadata Viewer）。
 
 PNG を中心に、メタデータ表示、LoRA 管理、サムネイル一覧、タグ集計、重複検出、ロゴオーバーレイまでを 1 つのデスクトップアプリにまとめています。
 
@@ -38,12 +38,9 @@ python png_viewer.py
 ## Optional Environment Variables
 
 - `PNG_VIEWER_DEFAULT_FOLDER`
-  - 起動時に最初に開くフォルダを指定します
-- `CIVITAI_API_KEY`
-  - Civitai API を使った検索を有効にします
+  - 起動時に最初に開くフォルダを指定します（環境変数名は旧名のまま据え置き）
 
 ```powershell
 $env:PNG_VIEWER_DEFAULT_FOLDER = "D:\Images"
-$env:CIVITAI_API_KEY = "your_api_key"
 python .\png_viewer.py
 ```
