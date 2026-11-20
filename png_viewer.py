@@ -167,7 +167,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtGui import (
     QPixmap, QImage, QIcon, QPainter, QColor, QFont, QFontMetrics,
-    QPalette, QCursor, QKeySequence, QAction,
+    QPalette, QCursor, QKeySequence, QAction, QActionGroup,
     QStandardItemModel, QStandardItem,
     QTransform, QBrush, QPen, QLinearGradient,
     QDrag, QImageReader, QPainterPath,
@@ -210,7 +210,7 @@ except ImportError:
 # ══════════════════════════════════════════════════════════════════════════════
 #  定数・設定
 # ══════════════════════════════════════════════════════════════════════════════
-APP_VERSION  = "v2.36"
+APP_VERSION  = "v2.37"
 APP_NAME     = "PNG Metadata Viewer"
 APP_AUTHOR   = "nemot"
 _APP_ICON_B64 = (
@@ -357,6 +357,8 @@ _I18N_TABLE = {
     '自動判定に戻す（登録解除）': {"en": 'Reset to auto (unregister)', "zh": '恢复自动判定（取消注册）', "ko": '자동 판정 복원(등록 해제)'},
     '右クリックで系統をタグ付け': {"en": 'Right-click to tag the base model', "zh": '右键点击以标记基础模型', "ko": '우클릭으로 베이스 모델을 태그합니다'},
     '自動判定': {"en": 'Auto', "zh": '自动判定', "ko": '자동'},
+    '並び替え(&R)': {"en": 'Sort(&R)', "zh": '排序(&R)', "ko": '정렬(&R)'},
+    '逆順': {"en": 'Reverse order', "zh": '逆序', "ko": '역순'},
     'F': {"en": 'F', "zh": 'F', "ko": 'F'},
     'F1 キーボードショートカット': {"en": 'F1 Keyboard shortcuts', "zh": 'F1 键盘快捷键', "ko": 'F1 키보드 단축키'},
     'GB\n現行形式 .raw: ': {"en": 'GB\nCurrent .raw format: ', "zh": 'GB\n当前格式 .raw：', "ko": 'GB\n현재 형식 .raw: '},
@@ -8926,6 +8928,22 @@ class MainWindow(QMainWindow):
         vm.addAction(T("☑ 全選択"),     self._select_all,   QKeySequence("Ctrl+A"))
         vm.addAction(T("🔍 類似画像検索"), self._find_similar)
 
+        # 並び替え（ツールバーの _sort_cb / _sort_dir_btn と双方向同期）
+        sortm = mb.addMenu(T("並び替え(&R)"))
+        self._sort_menu = sortm
+        self._sort_acts = {}
+        _sg = QActionGroup(self)
+        _sg.setExclusive(True)
+        for _k, _lbl in SORT_KEYS:
+            _a = _sg.addAction(sortm.addAction(_lbl))
+            _a.setCheckable(True)
+            _a.triggered.connect(lambda _c=False, key=_k: self._select_sort_key(key))
+            self._sort_acts[_k] = _a
+        sortm.addSeparator()
+        self._sort_rev_act = sortm.addAction(T("逆順"))
+        self._sort_rev_act.setCheckable(True)
+        self._sort_rev_act.toggled.connect(self._on_sort_rev_menu)
+
         # ツール
         tm = mb.addMenu(T("ツール(&T)"))
         tm.addAction(T("🔍 重複画像を検出"), self._open_duplicate_detector)
@@ -9164,7 +9182,8 @@ class MainWindow(QMainWindow):
             if self._sort_cb.itemData(i) == saved_key:
                 self._sort_cb.setCurrentIndex(i); break
         self._sort_cb.currentIndexChanged.connect(self._apply_filter)
-        add_w(self._sort_cb, row=1)
+        self._sort_cb.currentIndexChanged.connect(lambda *_: self._sync_sort_menu())
+        # 並び替えはメニューバーへ移動（ウィジェットは状態保持のみ・非表示）
 
         self._sort_dir_btn = QPushButton(T("↑昇順"))
         self._sort_dir_btn.setCheckable(True)
@@ -9180,7 +9199,7 @@ class MainWindow(QMainWindow):
         )
         self._sort_dir_btn.clicked.connect(self._toggle_sort_dir)
         self._update_sort_dir_btn()
-        add_w(self._sort_dir_btn, row=1)
+        self._sync_sort_menu()
 
         # ── タグ検索 ──────────────────────────────────────────────────────
         add_w(self._make_toolbar_tag_group(), row=1, stretch=2, order=-900)
@@ -9190,13 +9209,13 @@ class MainWindow(QMainWindow):
         model_wrap.setStyleSheet(
             f"background:{PAL['bg2']};border:1px solid {PAL['border']};border-radius:6px;")
         model_wrap.setFixedHeight(30)
-        model_wrap.setFixedWidth(150)
+        model_wrap.setFixedWidth(250)
         model_wrap.setToolTip(T("チェックポイント名で絞り込み"))
         model_layout = QHBoxLayout(model_wrap)
         model_layout.setContentsMargins(0, 0, 2, 0)
         model_layout.setSpacing(0)
 
-        self._model_cb = QComboBox(); self._model_cb.setFixedWidth(124); self._model_cb.setFixedHeight(28)
+        self._model_cb = QComboBox(); self._model_cb.setFixedWidth(228); self._model_cb.setFixedHeight(28)
         self._model_cb.setStyleSheet(
             f"QComboBox{{background:transparent;color:{PAL['fg1']};border:none;padding:0 6px;}}"
             f"QComboBox::drop-down{{border:none;width:18px;}}"
@@ -9280,7 +9299,7 @@ class MainWindow(QMainWindow):
         add_w(self._rating_cb, row=1)
 
         # ── アドレスバー（編集可能・Enter でフォルダ移動）────────────────
-        add_w(self._make_toolbar_address_group(), row=1, stretch=3, order=-1000)
+        add_w(self._make_toolbar_address_group(), row=1, stretch=1, order=-1000)
 
         # ── レイアウト選択プルダウン ──────────────────────────────────────
         self._layout_btns = {}  # 互換用に残す（旧ボタン参照があっても落ちないように）
@@ -11172,6 +11191,13 @@ class MainWindow(QMainWindow):
         idx = self._model_cb.findText(cur)
         self._model_cb.setCurrentIndex(idx if idx >= 0 else -1)   # -1 = 未選択（placeholder 表示）
         self._model_cb.blockSignals(False)
+        # プルダウン内のモデル名を省略表示しない（一番長い項目にポップアップ幅を合わせる）
+        try:
+            _fm = self._model_cb.fontMetrics()
+            _w = max([_fm.horizontalAdvance(m) for m in models] + [0]) + 44
+            self._model_cb.view().setMinimumWidth(max(_w, self._model_cb.width()))
+        except Exception:
+            pass
         self._refresh_base_model_filter(models, lineages)
         self._persist_lineage_overrides(mapping)
         if (cur != self._model_cb.currentText()
@@ -11229,6 +11255,37 @@ class MainWindow(QMainWindow):
 
     def _toggle_sort_dir(self):
         self._update_sort_dir_btn(); self._apply_filter()
+        self._sync_sort_menu()
+
+    def _select_sort_key(self, key: str):
+        # メニューバーの「並び替え」→ 状態保持の _sort_cb へ反映（currentIndexChanged で再描画＋同期）
+        idx = self._sort_cb.findData(key)
+        if idx >= 0 and self._sort_cb.currentIndex() != idx:
+            self._sort_cb.setCurrentIndex(idx)
+
+    def _on_sort_rev_menu(self, on: bool):
+        # メニューバーの「逆順」→ 状態保持の _sort_dir_btn へ反映（clicked を発火させず直接更新）
+        if self._sort_dir_btn.isChecked() != on:
+            self._sort_dir_btn.setChecked(on)
+            self._update_sort_dir_btn()
+            self._apply_filter()
+
+    def _sync_sort_menu(self):
+        # _sort_cb / _sort_dir_btn の現在値をメニューバーのチェック状態へ写す（双方向同期）
+        acts = getattr(self, "_sort_acts", None)
+        if not acts:
+            return
+        cur = self._sort_cb.currentData()
+        for k, a in acts.items():
+            if a.isChecked() != (k == cur):
+                a.setChecked(k == cur)
+        rev_act = getattr(self, "_sort_rev_act", None)
+        if rev_act is not None:
+            want = self._sort_dir_btn.isChecked()
+            if rev_act.isChecked() != want:
+                rev_act.blockSignals(True)
+                rev_act.setChecked(want)
+                rev_act.blockSignals(False)
 
     def _update_sort_dir_btn(self):
         rev = self._sort_dir_btn.isChecked()

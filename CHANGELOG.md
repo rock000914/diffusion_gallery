@@ -4,6 +4,24 @@ PNG/画像メタデータビューア (PySide6版) — 更新履歴
 
 ---
 
+## [v2.37] 2026-11-21
+
+### 変更（モデル欄・アドレス欄の横幅と並び替えの配置）
+- **モデル選択欄を拡大**: ツールバーのモデル欄 `model_wrap` を 150→**250px**、`_model_cb` を 124→**228px** に拡張し、チェックポイント名が見切れにくくなった [png_viewer.py:9212](file:///N:/マイドライブ/png_viwer/png_viewer.py#L9212) / [png_viewer.py:9218](file:///N:/マイドライブ/png_viwer/png_viewer.py#L9218)。
+- **プルダウン内の文字を省略しない**: `_on_model_list_done_guarded` で一覧生成時、`fontMetrics` の最長モデル名幅＋余白を `view().setMinimumWidth()` に設定。ポップアップでは省略記号（…）無く全名称が表示される [png_viewer.py:11194-11198](file:///N:/マイドライブ/png_viwer/png_viewer.py#L11194-L11198)。
+- **アドレス欄を短縮**: アドレスグループの `stretch` を 3→**1** に下げ、モデル欄ぶん余白を確保 [png_viewer.py:9302](file:///N:/マイドライブ/png_viwer/png_viewer.py#L9302)。
+
+### 追加（メニューバーに「並び替え」）
+- **`並び替え(&R)` メニュー**: メニューバーの表示とツールの間に新設。`SORT_KEYS`（名前/更新日時/作成日時/サイズ/画像サイズ/フォルダー/ランダム）を排他チェック式アクションで、その下に「逆順」トグルを追加 [png_viewer.py:8932-8948](file:///N:/マイドライブ/png_viwer/png_viewer.py#L8932-L8948)。
+- **ツールバーの並び替え控件は廃止（状態は維持）**: `_sort_cb`/`_sort_dir_btn` はツールバーへ `add_w` せず生成のみ（非表示）にし、メニューから操作。既存の `_apply_filter` は同じ widget を読むためロジック不変 [png_viewer.py:9184-9199](file:///N:/マイドライブ/png_viwer/png_viewer.py#L9184-L9199)。
+- **双方向同期**: `_select_sort_key`（メニュー→combo）、`_on_sort_rev_menu`（メニュー→ボタン）、`_sync_sort_menu`（combo/ボタン→メニュー）を追加。combo の `currentIndexChanged` と `_toggle_sort_dir` から同期を発火させ、どの経路で変えてもメニューのチェックが追従する [png_viewer.py:11260-11280](file:///N:/マイドライブ/png_viwer/png_viewer.py#L11260-L11280)。`QActionGroup`（QtGui）を import に追加。
+- **I18N**: `並び替え(&R)` / `逆順` に en/zh/ko を登録。
+
+### 検証
+- `.tmp/smoke_v237.py`（**15 check**）: メニューに「並び替え」が生成され `SORT_KEYS` 分のアクション＋「逆順」が存在／`_sort_cb`・`_sort_dir_btn` はツールバー非表示／`_model_cb` 幅 220px 以上／メニュー→combo（size/date）・combo→メニュー・メニュー→ボタン（逆順）→ボタン→メニュー（click）の双方向同期／未知キーで例外なし。既存 `smoke_v236`（79 check）と v2.33〜v2.35 系も回帰 PASS。`py_compile` OK。
+
+---
+
 ## [v2.36] 2026-11-21
 
 ### 追加（モデル系統の大幅拡充）
