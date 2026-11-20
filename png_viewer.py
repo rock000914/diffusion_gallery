@@ -210,7 +210,7 @@ except ImportError:
 # ══════════════════════════════════════════════════════════════════════════════
 #  定数・設定
 # ══════════════════════════════════════════════════════════════════════════════
-APP_VERSION  = "v2.38"
+APP_VERSION  = "v2.38.1"
 APP_NAME     = "Diffusion Gallery"
 APP_AUTHOR   = "nemot"
 _APP_ICON_B64 = (
@@ -4903,6 +4903,7 @@ class FullViewer(QDialog):
         self._bgm_queue: list[str] = []
         self._voice_queue: list[str] = []
         self._bgm_idx: int = 0
+        self._bgm_playing_path: str | None = None  # 連打時の setSource 多重起動(クラッシュ)防止
         self._voice_idx: int = 0
         self._music_on: bool = False
         self._audio_ready: bool = False
@@ -5687,6 +5688,18 @@ class FullViewer(QDialog):
     def closeEvent(self, e):
         """ウィンドウを閉じる際にローダーをキャンセルしてリソースを解放する。
         [v2.05 FIX] T2: cancel() 後に wait() で確実にスレッド終了。"""
+        # [v2.38.1] 閉じる前に送り/アニメ/ビートのタイマーと音声を止める。
+        # 後続コールバックが消えた scene へ触れるのと、音声だけ残り続けるのを防ぐ。
+        try:
+            self._stop_beat_sync()
+        except Exception:
+            pass
+        if getattr(self, "_ss_job", None) is not None:
+            self._ss_job.stop()
+        try:
+            self._stop_audio_playback()
+        except Exception:
+            pass
         if hasattr(self, "_pix_loader") and self._pix_loader is not None:
             self._pix_loader.cancel()
             self._pix_loader.wait(2000)
@@ -5883,6 +5896,13 @@ class FullViewer(QDialog):
         if advance:
             self._bgm_idx = (self._bgm_idx + 1) % len(self._bgm_queue)
         path = self._bgm_queue[self._bgm_idx]
+        # [v2.38.1] 同じ曲を再生/再開するとき setSource を繰り返すと QtMultimedia が
+        # 不安定化し、連打で FullViewer が落ち・音声だけ残る。停止済みなら play() で再開する。
+        if (not advance) and path == self._bgm_playing_path:
+            if self._bgm_player.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
+                self._bgm_player.play()
+            return
+        self._bgm_playing_path = path
         self._bgm_player.stop()
         self._bgm_player.setSource(QUrl.fromLocalFile(path))
         self._bgm_player.play()
@@ -6302,6 +6322,14 @@ class FullViewer(QDialog):
             self._beat_sync_timer.stop()
 
     def _toggle_ss(self):
+        # [v2.38.1] 連打による多重 start/stop（音声だけ残り FullViewer が落ちる）を防ぐ。
+        # 300ms 未満の連続トグルは無視し、ボタンの見かけを実状態へ戻す。
+        import time as _t
+        _now = _t.monotonic()
+        if _now - getattr(self, "_last_ss_toggle", 0.0) < 0.30:
+            self._ss_btn.setText("⏸ SS" if self._ss_running() else "▶ SS")
+            return
+        self._last_ss_toggle = _now
         if self._ss_running():
             if self._ss_job is not None:
                 self._ss_job.stop()

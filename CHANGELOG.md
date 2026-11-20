@@ -4,6 +4,21 @@ PNG/画像メタデータビューア (PySide6版) — 更新履歴
 
 ---
 
+## [v2.38.1] 2026-11-21
+
+### バグ修正（スライドショー再生ボタンの連打で FullViewer だけ落ち・音楽だけ残り再生される）
+- **症状**: ▶ SS を連打するとスライドショーのウィンドウ（FullViewer）だけが落ち、その後 BGM だけが再生され続けた。
+- **原因**: 停止→再生が高速に交互へ走ると、同一曲でも毎回 `QMediaPlayer.stop(); setSource(); play()` を実行していた（[png_viewer.py:5886](file:///N:/マイドライブ/png_viwer/png_viewer.py#L5886)）。QtMultimedia の `setSource` 連発はネイティブ層で不安定化しやすく、FullViewer のウィンドウが失われても音声は別スレッドで鳴り続け `closeEvent` 経由で止まらない、という状態になる。
+- **同一曲は `setSource` しない**: `_play_bgm_current` に `_bgm_playing_path` を導入。同じ曲の再生／再開は `play()` だけで済ませ、`setSource` の多重呼び出しを排除。曲送り（`advance=True`）のみ `setSource` する [png_viewer.py:5880-5892](file:///N:/マイドライブ/png_viwer/png_viewer.py#L5880-L5892)。
+- **連打のデバウンス**: `_toggle_ss` で 300ms 未満の連続トグルを無視し、ボタンの見かけを実状態へ戻す。多重な開始／停止そのものを防ぐ [png_viewer.py:6304-6312](file:///N:/マイドライブ/png_viwer/png_viewer.py#L6304-L6312)。
+- **終了順序の安全化**: `FullViewer.closeEvent` の最頭で `_stop_beat_sync()` / `_ss_job.stop()` / `_stop_audio_playback()` を呼び、送り・アニメ・ビートのタイマーと音声を先に止めてから後始末する順序へ変更。閉じた後もコールバックが消えた scene へ触れるのと、音楽だけ残り続けるのを防ぐ [png_viewer.py:5687-5701](file:///N:/マイドライブ/png_viwer/png_viewer.py#L5687-L5701)。
+- `APP_VERSION` を v2.38 → **v2.38.1** へ [png_viewer.py:213](file:///N:/マイドライブ/png_viwer/png_viewer.py#L213)。
+
+### 検証
+- `.tmp/smoke_v238_1.py`（**10 check**）: 初回のみ `setSource`／再生中の連打で増えない／停止後の再開は `play()` のみ／曲送りは `setSource` 実行／`_toggle_ss` 3 連打で `_start_ss` は 1 回・0.3s 経過後は受理／`closeEvent` が `_stop_beat_sync` を最頭で呼ぶ／`APP_VERSION=v2.38.1`。全て PASS。`py_compile` OK。
+
+---
+
 ## [v2.38] 2026-11-21
 
 ### 変更（アプリ名の正式決定: PNG Metadata Viewer → Diffusion Gallery）
