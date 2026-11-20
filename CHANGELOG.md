@@ -4,6 +4,22 @@ PNG/画像メタデータビューア (PySide6版) — 更新履歴
 
 ---
 
+## [v2.33] 2026-11-21
+
+### 新機能
+- **波形同期（実ビート時刻追従）**: スライドショーの送りを、固定 BPM 値ではなく楽曲で実際に検出したビート時刻に合わせられるようにした（音楽ソフトのビートマーカー相当）。環境設定 > 🎵 音楽 にチェックボックス [png_viewer.py:7092](file:///N:/マイドライブ/png_viwer/png_viewer.py#L7092)、設定キー `ss_bgm_wavesync`。
+  - `detect_beats(path, ...)`: librosa で窓分割ロード（既定 30 秒窓, sr=22050, hop=512）し、onset envelope を連結 → `beat_track` → ビート時刻リストを返す [png_viewer.py:6859](file:///N:/マイドライブ/png_viwer/png_viewer.py#L6859)。フルロード（89 分曲で約 2.9GB）や `librosa.stream`（0.11.0 では block_length 無視で 9.9GB かつ二重計数のバグ）を避け、**ピークメモリ 22MB / 約 92 秒 / 11,578 拍**（フルロードの ground truth 11,564 拍・先頭拍 2.0s・平均 461ms と一致）を実現。結果は `beat_cache.json` に mtime/size/sr/hop 付きでキャッシュ。
+  - `_BeatDetectWorker(QThread)`: 全曲解析を裏スレッドで実行し、UI を止めない [png_viewer.py:6912](file:///N:/マイドライブ/png_viwer/png_viewer.py#L6912)。`cancel()` 対応。
+  - `_start_beat_sync()` / `_schedule_next_beat_slide()` / `_on_beat_slide()`: 送り拍数（`ss_bgm_beat`）でビート列を間引き、`QMediaPlayer.position()` に対して `bisect` で次の送り時刻を探し、one-shot QTimer で `(next − pos)/再生速度` ms 後に `_next()` を発火 [png_viewer.py:5801-5843](file:///N:/マイドライブ/png_viwer/png_viewer.py#L5801-L5843)。
+  - 優先順位: **波形同期 > BPM 拍同期 > フレーム数固定**。`_start_ss()` は wavesync ON かつ音楽再生中なら実ビートを優先し、ビート列が無い（解析中）間は固定/BPM 間隔で送り続け、検出完了時に `_on_beat_detected()` が実ビートへ昇格 [png_viewer.py:5845](file:///N:/マイドライブ/png_viwer/png_viewer.py#L5845)。
+  - トラック変更（`_play_bgm_current`）でビート列を破棄して再検出、音楽停止（`_stop_music`）で固定間隔へ降格、一時停止（`_on_bgm_playback_state`）でタイマー停止／再開で再スケジュール。
+
+### 検証
+- 窓分割ビート検出の実測（`.tmp/measure_beats_window.py`）: 89.1 分 / 179 窓 / py-mem-peak **22MB** / onset 86.6s + beat_track 5.2s、ビート数がフルロード計測値と一致。
+- 構文・i18n 整合: AST parse OK、`_I18N_TABLE` 630 エントリ（+3）・Unicode ソート順維持。
+
+---
+
 ## [v2.32.4] 2026-11-21
 
 ### バグ修正

@@ -31,3 +31,4 @@ settings.json
 bgm/
 voice/
 bpm_cache.json
+beat_cache.json

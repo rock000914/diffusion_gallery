@@ -209,7 +209,7 @@ except ImportError:
 # ══════════════════════════════════════════════════════════════════════════════
 #  定数・設定
 # ══════════════════════════════════════════════════════════════════════════════
-APP_VERSION  = "v2.32.4"
+APP_VERSION  = "v2.33"
 APP_NAME     = "PNG Metadata Viewer"
 APP_AUTHOR   = "nemot"
 _APP_ICON_B64 = (
@@ -382,6 +382,7 @@ _I18N_TABLE = {
     '[年月]': {"en": '[year/month]', "zh": '[年月]', "ko": '[년월]'},
     '\\s*[日]': {"en": '\\s*[日]', "zh": '\\s*[日]', "ko": '\\s*[日]'},
     'image_quality_sorter.py を読み込めませんでした:\n': {"en": 'Could not load image_quality_sorter.py:\n', "zh": '无法加载 image_quality_sorter.py：\n', "ko": 'image_quality_sorter.py 를 불러올 수 없습니다:\n'},
+    'librosa が未導入のため波形同期は無効です': {"en": 'librosa is not installed, so waveform sync is disabled', "zh": '未安装 librosa，因此波形同步已禁用', "ko": 'librosa 가 설치되지 않아 파형 동기화가 비활성화됩니다'},
     'librosa が未導入のため自動検出できません': {"en": "Cannot auto-detect (librosa not installed)", "zh": "未安装 librosa，无法自动检测", "ko": "librosa 미설치로 자동 감지 불가"},
     'librosa が未導入のため自動検出は無効です': {"en": "Auto-detect disabled (librosa not installed)", "zh": "未安装 librosa，自动检测已禁用", "ko": "librosa 미설치로 자동 감지 비활성화"},
     'raw 文字列': {"en": 'raw string', "zh": '原始字符串', "ko": 'raw 문자열'},
@@ -701,6 +702,7 @@ _I18N_TABLE = {
     '旧メタキャッシュの移行に失敗: ': {"en": 'Failed to migrate old meta cache: ', "zh": '旧元数据缓存迁移失败：', "ko": '구 메타 캐시 마이그레이션 실패: '},
     '旧形式 .pkl は再生成されず、そのまま不要になります。': {"en": 'Legacy .pkl will not be regenerated and will simply become obsolete.', "zh": '旧格式 .pkl 不会重新生成，也不再需要。', "ko": '구형식 .pkl 은 재생성되지 않으며 그대로 불필요해집니다.'},
     '昇順/降順を切り替え': {"en": 'Toggle ascending/descending', "zh": '切换升序/降序', "ko": '오름/내림차순 전환'},
+    '曲の実際のビート検出時刻に合わせてスライドします。BPM 固定値より優先されます。': {"en": 'Slides follow the track\'s actual detected beat times. Takes priority over the fixed BPM value.', "zh": '根据乐曲实际检测到的节拍时间进行切换。优先于固定的 BPM 值。', "ko": '곡의 실제 감지된 비트 시간에 맞춰 전환합니다. 고정 BPM 값보다 우선합니다.'},
     '更新日時': {"en": 'Modified', "zh": '更新时间', "ko": '수정 일시'},
     '更新日時: ': {"en": 'Modified: ', "zh": '更新时间：', "ko": '수정 일시: '},
     '最大': {"en": 'Max', "zh": '最大', "ko": '최대'},
@@ -735,6 +737,7 @@ _I18N_TABLE = {
     '正規表現として解釈': {"en": 'Interpret as regex', "zh": '按正则表达式解析', "ko": '정규식으로 해석'},
     '残り ': {"en": 'Remaining ', "zh": '剩余 ', "ko": '남은 '},
     '没入モード (Space/F11)': {"en": 'Immersive mode (Space/F11)', "zh": '沉浸模式 (Space/F11)', "ko": '몰입 모드 (Space/F11)'},
+    '波形同期（実ビートに合わせる）': {"en": 'Waveform sync (match real beats)', "zh": '波形同步（匹配实际节拍）', "ko": '파형 동기화(실제 비트 맞춤)'},
     '無効': {"en": "Disabled", "zh": "禁用", "ko": "비활성"},
     '現フォルダ': {"en": 'Current folder', "zh": '当前文件夹', "ko": '현재 폴더'},
     '現在 ': {"en": 'Current ', "zh": '当前 ', "ko": '현재 '},
@@ -4739,6 +4742,14 @@ class FullViewer(QDialog):
         self._voice_idx: int = 0
         self._music_on: bool = False
         self._audio_ready: bool = False
+        # [v2.33] 波形同期（実ビート時刻追従）
+        self._beat_times: list[float] = []        # 現 BGM 曲のビート時刻(秒)
+        self._beat_slide_times: list[float] = []  # 拍数で間引いた送り時刻(秒)
+        self._beat_worker = None  # _BeatDetectWorker | None
+        self._beat_sync_timer = QTimer(self)
+        self._beat_sync_timer.setSingleShot(True)
+        self._beat_sync_timer.timeout.connect(self._on_beat_slide)
+        self._wavesync_active: bool = False
         self._init_audio_state()
 
         self._build_ui()
@@ -5420,6 +5431,7 @@ class FullViewer(QDialog):
         self._bgm_player = QMediaPlayer(self)
         self._bgm_player.setAudioOutput(self._bgm_output)
         self._bgm_player.mediaStatusChanged.connect(self._on_bgm_status)
+        self._bgm_player.playbackStateChanged.connect(self._on_bgm_playback_state)
         self._voice_output = QAudioOutput(self)
         self._voice_player = QMediaPlayer(self)
         self._voice_player.setAudioOutput(self._voice_output)
@@ -5451,6 +5463,19 @@ class FullViewer(QDialog):
         self._bgm_player.stop()
         self._bgm_player.setSource(QUrl.fromLocalFile(path))
         self._bgm_player.play()
+        # 波形同期: 曲が変わったのでビート列を破棄し再検出。検出完了までは
+        # 固定/BPM 間隔で送り続け、_on_beat_detected で実ビートへ昇格する。
+        if self._wavesync_enabled():
+            ss_running = (self._ss_job is not None and self._ss_job.isActive()) or self._wavesync_active
+            self._beat_times = []
+            self._beat_slide_times = []
+            self._kick_beat_detect()
+            if ss_running:
+                self._stop_beat_sync()
+                beat_ms = self._beat_interval_ms()
+                interval = beat_ms if beat_ms is not None else max(16, int(self._ss_spin.value() * 1000 / 60))
+                self._ss_job.start(interval)
+                self._ss_btn.setText("⏸ SS")
 
     def _play_voice_current(self, advance: bool = False):
         if not self._voice_queue:
@@ -5504,6 +5529,11 @@ class FullViewer(QDialog):
             self._bgm_player.stop()
         if self._voice_player is not None:
             self._voice_player.stop()
+        # 波形同期中の SS は音楽停止で位置基準を失うので固定間隔へ降格
+        if self._wavesync_active:
+            self._stop_beat_sync()
+            if self._ss_job is not None and self._ss_btn.text().startswith("⏸"):
+                self._ss_job.start(max(16, int(self._ss_spin.value() * 1000 / 60)))
 
     def _set_volume(self, kind: str, value: int):
         """音量を 0-100 で設定。cfg 更新 + save_cfg + QAudioOutput 即時反映。
@@ -5720,14 +5750,118 @@ class FullViewer(QDialog):
 
     def _on_ss_spin_changed(self, _val):
         """スライドショー実行中にフレーム数を変えたら間隔へ即時反映。
-        拍同期（BGM）中はフレーム数が基準でないので再適用しない。"""
+        拍同期（BGM）/ 波形同期中はフレーム数が基準でないので再適用しない。"""
+        if self._wavesync_active:
+            return
         if self._ss_job and self._ss_job.isActive():
             if self._beat_interval_ms() is None:
                 self._ss_job.start(max(16, int(self._ss_spin.value() * 1000 / 60)))
 
+    # ── 波形同期（実ビート時刻追従） v2.33 ───────────────────────────────
+    def _wavesync_enabled(self) -> bool:
+        return bool(self._audio_cfg("ss_bgm_wavesync", False))
+
+    def _recompute_slide_times(self):
+        """ビート列を拍数で間引いて送り時刻リストを作る。"""
+        beat = int(self._audio_cfg("ss_bgm_beat", 4)) or 4
+        if beat < 1:
+            beat = 4
+        bt = self._beat_times
+        self._beat_slide_times = [bt[i] for i in range(0, len(bt), beat)] if bt else []
+
+    def _kick_beat_detect(self):
+        """現 BGM 曲のビート列を裏スレッドで検出開始。"""
+        if not HAS_LIBROSA or not self._bgm_queue or self._bgm_player is None:
+            return
+        path = self._bgm_queue[self._bgm_idx]
+        if self._beat_worker is not None and self._beat_worker.isRunning():
+            self._beat_worker.cancel()
+            self._beat_worker.wait(3000)
+        self._beat_times = []
+        self._beat_slide_times = []
+        w = _BeatDetectWorker(path, self)
+        w.finished_ok.connect(self._on_beat_detected)
+        w.failed.connect(self._on_beat_failed)
+        self._beat_worker = w
+        w.start()
+
+    def _on_beat_detected(self, path: str, beats: list):
+        cur = self._bgm_queue[self._bgm_idx] if self._bgm_queue else ""
+        if path != cur:
+            return  # 解析中に曲が変わった → 破棄
+        self._beat_times = list(beats)
+        # SS 実行中かつ波面同期希望なら固定間隔から実ビートへ切り替え
+        if self._wavesync_enabled() and self._ss_btn.text().startswith("⏸"):
+            self._start_beat_sync()
+
+    def _on_beat_failed(self, path: str):
+        # 検出失敗は固定間隔 / BPM 同期のまま継続（追加処理なし）
+        pass
+
+    def _start_beat_sync(self) -> bool:
+        """実ビート時刻でスライドショーを送り始める。列が無ければ False。"""
+        if not self._beat_times:
+            self._kick_beat_detect()
+            return False
+        self._recompute_slide_times()
+        if not self._beat_slide_times:
+            return False
+        if self._ss_job is not None and self._ss_job.isActive():
+            self._ss_job.stop()
+        self._wavesync_active = True
+        self._schedule_next_beat_slide()
+        return True
+
+    def _stop_beat_sync(self):
+        self._wavesync_active = False
+        self._beat_sync_timer.stop()
+
+    def _schedule_next_beat_slide(self):
+        """再生位置に対し次の送り時刻まで one-shot タイマーを張る。"""
+        if not self._wavesync_active or not self._beat_slide_times:
+            return
+        if self._bgm_player is None:
+            return
+        try:
+            pos_ms = int(self._bgm_player.position())
+        except Exception:
+            return
+        if pos_ms < 0:
+            pos_ms = 0
+        pos_s = pos_ms / 1000.0
+        import bisect
+        i = bisect.bisect_right(self._beat_slide_times, pos_s)
+        if i >= len(self._beat_slide_times):
+            return  # 曲末尾 → EndOfMedia で次曲へ
+        next_t = self._beat_slide_times[i]
+        try:
+            rate = float(self._audio_cfg("ss_bgm_speed", 1.0)) or 1.0
+        except (TypeError, ValueError):
+            rate = 1.0
+        delay = int(round((next_t - pos_s) * 1000 / rate))
+        self._beat_sync_timer.start(max(0, delay))
+
+    def _on_beat_slide(self):
+        if not self._wavesync_active:
+            return
+        self._next()
+        self._schedule_next_beat_slide()
+
+    def _on_bgm_playback_state(self, state):
+        """波面同期中、再生が止まったらタイマーを止め、再開したら再スケジュール。"""
+        if not self._wavesync_active:
+            return
+        if state == QMediaPlayer.PlaybackState.PlayingState:
+            self._schedule_next_beat_slide()
+        else:
+            self._beat_sync_timer.stop()
+
     def _toggle_ss(self):
-        if self._ss_job and self._ss_job.isActive():
-            self._ss_job.stop(); self._ss_btn.setText("▶ SS")
+        if (self._ss_job and self._ss_job.isActive()) or self._wavesync_active:
+            if self._ss_job is not None:
+                self._ss_job.stop()
+            self._stop_beat_sync()
+            self._ss_btn.setText("▶ SS")
         else:
             self._start_ss()
 
@@ -5735,7 +5869,13 @@ class FullViewer(QDialog):
         if self._ss_job is None:
             self._ss_job = QTimer(self)
             self._ss_job.timeout.connect(self._next)
+        # 波形同期 (v2.33) が最優先。実ビート列があればそれで送る。
+        if self._wavesync_enabled() and self._music_on:
+            if self._start_beat_sync():
+                self._ss_btn.setText("⏸ SS")
+                return
         # 拍同期 (v2.29): BGM が有効なら BPM×拍数 で間隔算出、無ければフレーム数固定間隔
+        self._stop_beat_sync()
         beat_ms = self._beat_interval_ms()
         if beat_ms is not None:
             interval = beat_ms
@@ -6683,6 +6823,117 @@ def np_median(values: list[int]) -> float:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+#  波形同期 (v2.33) — 曲全体の「実ビート時刻」検出。librosa.stream は
+#  block_length を無視して全体を読むため使わず、load(offset,duration) で
+#  窓分割してオンセット包絡線だけ連結する（89 分でも低メモリ）。
+# ══════════════════════════════════════════════════════════════════════════════
+BEAT_CACHE_FILE = APP_DIR / "beat_cache.json"
+_beat_cache: dict | None = None
+_beat_cache_lock = threading.Lock()
+
+def _load_beat_cache() -> dict:
+    global _beat_cache
+    if _beat_cache is not None:
+        return _beat_cache
+    try:
+        if BEAT_CACHE_FILE.exists():
+            with open(BEAT_CACHE_FILE, encoding="utf-8") as f:
+                _beat_cache = json.load(f)
+        else:
+            _beat_cache = {}
+    except Exception:
+        _beat_cache = {}
+    return _beat_cache
+
+def _save_beat_cache() -> None:
+    if _beat_cache is None:
+        return
+    try:
+        tmp = BEAT_CACHE_FILE.with_suffix(".json.tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(_beat_cache, f, ensure_ascii=False)
+        os.replace(tmp, BEAT_CACHE_FILE)
+    except Exception:
+        pass
+
+def detect_beats(path: str, use_cache: bool = True, sr: int = 22050,
+                 hop: int = 512, win_sec: float = 30.0) -> list[float] | None:
+    """曲全体のビート時刻(秒)を検出。戻り値: list[float]、失敗/librosa無しは None。
+    キャッシュは mtime+size+sr+hop が一致すれば再利用。"""
+    if not HAS_LIBROSA:
+        return None
+    try:
+        st = os.stat(path)
+    except OSError:
+        return None
+    with _beat_cache_lock:
+        cache = _load_beat_cache()
+        if use_cache:
+            ent = cache.get(path)
+            if (ent and ent.get("mtime") == st.st_mtime and ent.get("size") == st.st_size
+                    and ent.get("sr") == sr and ent.get("hop") == hop):
+                bt = ent.get("beats")
+                if isinstance(bt, list) and len(bt) >= 2:
+                    return [float(x) for x in bt]
+    try:
+        import librosa
+        import numpy as np
+        dur = librosa.get_duration(path=path)
+        if dur <= 0:
+            return None
+        oenvs = []
+        offset = 0.0
+        while offset < dur:
+            y, _ = librosa.load(path, sr=sr, mono=True, offset=offset, duration=win_sec)
+            if len(y) < sr * 0.5:
+                break
+            o = librosa.onset.onset_strength(y=y, sr=sr, hop_length=hop)
+            oenvs.append(o.astype(np.float32))
+            offset += win_sec
+        if not oenvs:
+            return None
+        oenv = np.concatenate(oenvs)
+        del oenvs
+        _, beat_frames = librosa.beat.beat_track(onset_envelope=oenv, sr=sr, hop_length=hop)
+        beat_times = librosa.frames_to_time(beat_frames, sr=sr, hop_length=hop)
+        beats = [round(float(t), 3) for t in beat_times]
+    except Exception:
+        return None
+    if len(beats) < 2:
+        return None
+    with _beat_cache_lock:
+        cache = _load_beat_cache()
+        cache[path] = {"mtime": st.st_mtime, "size": st.st_size, "sr": sr,
+                       "hop": hop, "beats": beats}
+        _save_beat_cache()
+    return beats
+
+
+class _BeatDetectWorker(QThread):
+    """1曲の全体ビート検出を裏スレッドで。UI を止めない。
+    detect_beats は内部でロック付きキャッシュ更新する。"""
+    finished_ok = Signal(str, list)   # (path, beat_times)
+    failed = Signal(str)              # (path)
+
+    def __init__(self, path: str, parent=None):
+        super().__init__(parent)
+        self._path = path
+        self._cancelled = False
+
+    def cancel(self):
+        self._cancelled = True
+
+    def run(self):
+        beats = detect_beats(self._path)
+        if self._cancelled:
+            return
+        if beats is None:
+            self.failed.emit(self._path)
+        else:
+            self.finished_ok.emit(self._path, beats)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 #  設定ダイアログ
 # ══════════════════════════════════════════════════════════════════════════════
 class SettingsDialog(QDialog):
@@ -6837,6 +7088,14 @@ class SettingsDialog(QDialog):
             bi = self._ss_bgm_beat.findData(saved_beat)
             if bi >= 0: self._ss_bgm_beat.setCurrentIndex(bi)
             bgm_form.addRow(T("送り拍数:"), self._ss_bgm_beat)
+            # 波形同期（実ビート時刻追従） v2.33
+            self._ss_bgm_wavesync = QCheckBox(T("波形同期（実ビートに合わせる）"))
+            self._ss_bgm_wavesync.setChecked(bool(self._cfg.get("ss_bgm_wavesync", False)))
+            self._ss_bgm_wavesync.setToolTip(T("曲の実際のビート検出時刻に合わせてスライドします。BPM 固定値より優先されます。"))
+            if not HAS_LIBROSA:
+                self._ss_bgm_wavesync.setEnabled(False)
+                self._ss_bgm_wavesync.setToolTip(T("librosa が未導入のため波形同期は無効です"))
+            bgm_form.addRow(self._ss_bgm_wavesync)
             l6.addWidget(bgm_grp)
 
             # 音声・セリフ グループ
@@ -6980,6 +7239,8 @@ class SettingsDialog(QDialog):
             self._cfg["ss_bgm_speed"]    = float(self._ss_bgm_speed.value())
             self._cfg["ss_bgm_bpm"]      = int(self._ss_bgm_bpm.value())
             self._cfg["ss_bgm_beat"]     = int(self._ss_bgm_beat.currentData())
+            if hasattr(self, "_ss_bgm_wavesync"):
+                self._cfg["ss_bgm_wavesync"] = bool(self._ss_bgm_wavesync.isChecked())
             self._cfg["ss_voice_folder"] = self._ss_voice_edit.text().strip()
             self._cfg["ss_voice_enabled"]  = bool(self._ss_voice_enabled.isChecked())
             self._cfg["ss_voice_volume"]   = int(self._ss_voice_volume.value())
