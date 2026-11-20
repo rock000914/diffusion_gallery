@@ -161,7 +161,7 @@ from PySide6.QtWidgets import (
     QFileDialog, QMessageBox, QInputDialog, QSizePolicy, QTableWidget, QTableWidgetItem,
     QAbstractItemView, QGroupBox, QTabWidget, QButtonGroup,
     QStyledItemDelegate, QStyleOptionViewItem, QStyle,
-    QGraphicsView, QGraphicsScene, QGraphicsPixmapItem,
+    QGraphicsView, QGraphicsScene, QGraphicsPixmapItem, QGraphicsOpacityEffect,
     QSplashScreen,
 )
 from PySide6.QtGui import (
@@ -209,7 +209,7 @@ except ImportError:
 # ══════════════════════════════════════════════════════════════════════════════
 #  定数・設定
 # ══════════════════════════════════════════════════════════════════════════════
-APP_VERSION  = "v2.33"
+APP_VERSION  = "v2.34"
 APP_NAME     = "PNG Metadata Viewer"
 APP_AUTHOR   = "nemot"
 _APP_ICON_B64 = (
@@ -500,7 +500,12 @@ _I18N_TABLE = {
     'スライドショー時に再生': {"en": "Play during slideshow", "zh": "幻灯片播放时播放", "ko": "슬라이드쇼 중 재생"},
     'スライドショー音楽 OFF': {"en": "Slideshow music OFF", "zh": "幻灯片音乐 OFF", "ko": "슬라이드쇼 음악 OFF"},
     'スライドショー音楽 ON': {"en": "Slideshow music ON", "zh": "幻灯片音乐 ON", "ko": "슬라이드쇼 음악 ON"},
+    'スライド切替アニメーション': {"en": 'Slide transition animation', "zh": '幻灯片切换动画', "ko": '슬라이드 전환 애니메이션'},
+    'スライド送り時にアニメーションを再生': {"en": 'Play animation when advancing slides', "zh": '切换幻灯片时播放动画', "ko": '슬라이드 전환 시 애니메이션 재생'},
+    'スライド（上下）': {"en": 'Slide (vertical)', "zh": '滑动（上下）', "ko": '슬라이드(상하)'},
+    'スライド（左右）': {"en": 'Slide (horizontal)', "zh": '滑动（左右）', "ko": '슬라이드(좌우)'},
     'ズーム:': {"en": 'Zoom: ', "zh": '缩放：', "ko": '확대:'},
+    'ズームイン': {"en": 'Zoom in', "zh": '缩放进入', "ko": '줌 인'},
     'タグ (プロンプト/ネガ/LoRA)': {"en": 'Tags (prompt/negative/LoRA)', "zh": '标签 (提示词/负面/LoRA)', "ko": '태그 (프롬프트/네거티브/LoRA)'},
     'タグ名（部分一致）:': {"en": 'Tag name (partial match):', "zh": '标签名（部分匹配）：', "ko": '태그 이름 (부분 일치):'},
     'タグ追加': {"en": 'Add tag', "zh": '添加标签', "ko": '태그 추가'},
@@ -527,6 +532,7 @@ _I18N_TABLE = {
     'ファイル名': {"en": 'File name', "zh": '文件名', "ko": '파일 이름'},
     'ファイル名: ': {"en": 'File name: ', "zh": '文件名：', "ko": '파일 이름: '},
     'ファイル情報・メタ': {"en": 'File info / meta', "zh": '文件信息・元数据', "ko": '파일 정보·메타'},
+    'フェード': {"en": 'Fade', "zh": '淡入淡出', "ko": '페이드'},
     'フォルダが見つかりません:\n': {"en": 'Folder not found:\n', "zh": '未找到文件夹：\n', "ko": '폴더를 찾을 수 없습니다:\n'},
     'フォルダが見つかりません: ': {"en": 'Folder not found: ', "zh": '未找到文件夹：', "ko": '폴더를 찾을 수 없습니다: '},
     'フォルダを作成しました: ': {"en": 'Folder created: ', "zh": '已创建文件夹：', "ko": '폴더를 만들었습니다: '},
@@ -557,6 +563,7 @@ _I18N_TABLE = {
     'モデル': {"en": 'Model', "zh": '模型', "ko": '모델'},
     'モデル名': {"en": 'Model name', "zh": '模型名称', "ko": '모델 이름'},
     'ランダム': {"en": 'Random', "zh": '随机', "ko": '랜덤'},
+    'ランダム（毎回くじ）': {"en": 'Random (each time)', "zh": '随机（每次抽取）', "ko": '랜덤(매번 추첨)'},
     'リセット': {"en": 'Reset', "zh": '重置', "ko": '리셋'},
     'ループ（最初/最後に戻る）': {"en": 'Loop (back to first/last)', "zh": '循环（回到开头/末尾）', "ko": '반복 (처음/마지막으로 돌아가기)'},
     'ロゴ': {"en": 'Logo', "zh": 'Logo', "ko": '로고'},
@@ -653,6 +660,7 @@ _I18N_TABLE = {
     '削除確認 (': {"en": 'Confirm deletion (', "zh": '确认删除（', "ko": '삭제 확인 ('},
     '前のフォルダはありません': {"en": 'No previous folder', "zh": '没有上一文件夹', "ko": '이전 폴더가 없습니다'},
     '前回の重複検出結果を表示: ': {"en": 'Show previous duplicate detection results: ', "zh": '显示上次重复检测结果：', "ko": '이전 중복 검출 결과 표시: '},
+    '即時（アニメなし）': {"en": 'Instant (no animation)', "zh": '立即（无动画）', "ko": '즉시(애니메이션 없음)'},
     '参照...': {"en": 'Browse...', "zh": '浏览...', "ko": '찾아보기...'},
     '右': {"en": 'Right', "zh": '右', "ko": '오른쪽'},
     '右カラムを開閉': {"en": 'Toggle right column', "zh": '切换右栏', "ko": '오른쪽 열 열기/닫기'},
@@ -703,6 +711,7 @@ _I18N_TABLE = {
     '旧形式 .pkl は再生成されず、そのまま不要になります。': {"en": 'Legacy .pkl will not be regenerated and will simply become obsolete.', "zh": '旧格式 .pkl 不会重新生成，也不再需要。', "ko": '구형식 .pkl 은 재생성되지 않으며 그대로 불필요해집니다.'},
     '昇順/降順を切り替え': {"en": 'Toggle ascending/descending', "zh": '切换升序/降序', "ko": '오름/내림차순 전환'},
     '曲の実際のビート検出時刻に合わせてスライドします。BPM 固定値より優先されます。': {"en": 'Slides follow the track\'s actual detected beat times. Takes priority over the fixed BPM value.', "zh": '根据乐曲实际检测到的节拍时间进行切换。优先于固定的 BPM 值。', "ko": '곡의 실제 감지된 비트 시간에 맞춰 전환합니다. 고정 BPM 값보다 우선합니다.'},
+    '曲の実際のビート検出時刻に合わせてスライドします。上の送り拍数で間隔を選べ、BPM 固定値より優先されます。': {"en": 'Slides to the track\'s actual detected beat times. Use \'slides per beat\' above to set the interval; takes priority over the fixed BPM.', "zh": '按乐曲实际检测到的节拍时间切换。可在上方『切换拍数』选择间隔，优先于固定 BPM。', "ko": '곡의 실제 감지된 비트 시간에 맞춰 전환합니다. 위 \'전송 박수\'로 간격을 선택할 수 있으며 고정 BPM보다 우선합니다.'},
     '更新日時': {"en": 'Modified', "zh": '更新时间', "ko": '수정 일시'},
     '更新日時: ': {"en": 'Modified: ', "zh": '更新时间：', "ko": '수정 일시: '},
     '最大': {"en": 'Max', "zh": '最大', "ko": '최대'},
@@ -748,6 +757,7 @@ _I18N_TABLE = {
     '現行形式 .raw: ': {"en": 'Current .raw format: ', "zh": '当前格式 .raw：', "ko": '현재 형식 .raw: '},
     '環境設定': {"en": 'Settings', "zh": '环境设置', "ko": '환경 설정'},
     '環境設定を保存しました': {"en": 'Settings saved', "zh": '已保存环境设置', "ko": '환경 설정을 저장했습니다'},
+    '環境設定（音楽タブへ）': {"en": 'Settings (open Music tab)', "zh": '环境设置（打开音乐标签）', "ko": '환경 설정(음악 탭으로)'},
     '生成ステップ数の範囲。値が不明な画像は除外されます': {"en": 'Number of steps range. Images with unknown values are excluded.', "zh": '生成步数范围。值未知的图片将被排除。', "ko": '생성 스텝 수 범위. 알 수 없는 값의 이미지는 제외됩니다'},
     '生成パラメータ': {"en": 'Generation parameters', "zh": '生成参数', "ko": '생성 파라미터'},
     '画像が見つかりません': {"en": 'Image not found', "zh": '未找到图片', "ko": '이미지를 찾을 수 없습니다'},
@@ -762,6 +772,7 @@ _I18N_TABLE = {
     '確認': {"en": 'Confirm', "zh": '确认', "ko": '확인'},
     '秒': {"en": ' sec', "zh": ' 秒', "ko": ' 초'},
     '移行時は先に丸ごとコピーし、全件サイズ一致を確認してから元を削除してください': {"en": 'When migrating, copy everything first, verify all file sizes match, then delete the original', "zh": '迁移时请先完整复制，确认所有文件大小一致后再删除原文件', "ko": '마이그레이션 시에는 먼저 전체를 복사하고 모든 파일 크기가 일치하는지 확인한 뒤 원본을 삭제하세요'},
+    '種類:': {"en": 'Type:', "zh": '类型：', "ko": '종류:'},
     '端で停止（画像上にメッセージ表示）': {"en": 'Stop at edge (message shown on image)', "zh": '在边缘停止（在图片上显示消息）', "ko": '끝에서 정지 (이미지 위에 메시지 표시)'},
     '等倍 (0)': {"en": 'Actual size (0)', "zh": '原始大小 (0)', "ko": '실제 크기 (0)'},
     '範囲指定': {"en": 'Range', "zh": '范围指定', "ko": '범위 지정'},
@@ -791,6 +802,7 @@ _I18N_TABLE = {
     '読み込む拡張子（チェック=有効）': {"en": 'Extensions to load (checked = enabled)', "zh": '要读取的扩展名（勾选=启用）', "ko": '불러올 확장자 (체크=활성)'},
     '読み込めませんでした: ': {"en": 'Could not load: ', "zh": '无法读取：', "ko": '불러올 수 없습니다: '},
     '送り拍数:': {"en": "Beats per advance:", "zh": "每张节拍数：", "ko": "장당 박자수:"},
+    '送り拍数（BPM・波形同期 共通）:': {"en": 'Slides per beat (BPM & waveform):', "zh": '切换拍数（BPM・波形 通用）：', "ko": '전송 박수(BPM·파형 공통):'},
     '送り間隔 (フレーム, 60fps 基準) / 1F≈16.67ms / 60F=1秒 / 180F=3秒': {"en": 'Interval (frames, 60fps base) / 1F≈16.67ms / 60F=1s / 180F=3s', "zh": '间隔（帧，60fps 基准）/ 1F≈16.67ms / 60F=1秒 / 180F=3秒', "ko": '간격 (프레임, 60fps 기준) / 1F≈16.67ms / 60F=1초 / 180F=3초'},
     '速度': {"en": 'Speed', "zh": '速度', "ko": '속도'},
     '適用': {"en": 'Apply', "zh": '应用', "ko": '적용'},
@@ -809,6 +821,7 @@ _I18N_TABLE = {
     '重複画像は見つかりませんでした。': {"en": 'No duplicate images found.', "zh": '未找到重复图片。', "ko": '중복 이미지를 찾을 수 없습니다.'},
     '重複画像を検出中...': {"en": 'Detecting duplicate images...', "zh": '正在检测重复图片...', "ko": '중복 이미지 검출 중...'},
     '重複画像検出': {"en": 'Duplicate detection', "zh": '重复图片检测', "ko": '중복 이미지 검출'},
+    '長さ:': {"en": 'Duration:', "zh": '时长：', "ko": '길이:'},
     '閉じる': {"en": 'Close', "zh": '关闭', "ko": '닫기'},
     '閉じる (Esc)': {"en": 'Close (Esc)', "zh": '关闭 (Esc)', "ko": '닫기 (Esc)'},
     '閉じる (Esc/Enter)': {"en": 'Close (Esc/Enter)', "zh": '关闭 (Esc/Enter)', "ko": '닫기 (Esc/Enter)'},
@@ -4750,6 +4763,12 @@ class FullViewer(QDialog):
         self._beat_sync_timer.setSingleShot(True)
         self._beat_sync_timer.timeout.connect(self._on_beat_slide)
         self._wavesync_active: bool = False
+        # [v2.34] スライド切替アニメーション
+        self._fx_item = None  # 送り前画像を一時的に重ねる QGraphicsPixmapItem | None
+        self._anim_state = None  # dict | None 進行中のトランジション情報
+        self._anim_timer = QTimer(self)
+        self._anim_timer.setInterval(16)
+        self._anim_timer.timeout.connect(self._anim_step)
         self._init_audio_state()
 
         self._build_ui()
@@ -4830,7 +4849,7 @@ class FullViewer(QDialog):
         if not HAS_MULTIMEDIA:
             self._vol_btn.setEnabled(False)
             self._vol_btn.setToolTip(T("PySide6.QtMultimedia が無効"))
-        self._cfg_btn = tbtn("⚙", T("環境設定")); self._cfg_btn.clicked.connect(self._open_settings_from_viewer)
+        self._cfg_btn = tbtn("⚙", T("環境設定（音楽タブへ）")); self._cfg_btn.clicked.connect(self._open_settings_from_viewer)
         close_btn= tbtn("✕", T("閉じる (Esc/Enter)")); close_btn.clicked.connect(self.close)
         close_btn.setStyleSheet(
             f"QPushButton{{background:#1e1e1e;color:{PAL['red']};border:1px solid #333;border-radius:4px;padding:0 8px;}}"
@@ -5195,10 +5214,11 @@ class FullViewer(QDialog):
             except Exception:
                 pass
         self._overlay_item.hide()
-        self._pix_item.setPixmap(px)
-        self._scene.setSceneRect(QRectF(0, 0, px.width(), px.height()))
-        self._pix_item.setPos(0, 0)
-        self._apply_view()
+        old_px = self._pix_item.pixmap()
+        if self._anim_enabled() and not old_px.isNull():
+            self._start_transition(old_px, px)
+        else:
+            self._commit_new(px)
         try:
             st = os.stat(path)
             mode = T("実寸") if self._fit_mode == "actual" else "fit"
@@ -5215,6 +5235,7 @@ class FullViewer(QDialog):
             return
         self._busy_timer.stop()
         # [v2.05 FIX] D7: scene.clear() を廃止しピクスマップのみクリア
+        self._finish_transition()
         self._pix_item.setPixmap(QPixmap())
         self._overlay_item.setPlainText(f"{Te('読み込めませんでした: ')}{error}")
         br = self._overlay_item.boundingRect()
@@ -5248,6 +5269,111 @@ class FullViewer(QDialog):
         view.resetTransform()
         view.scale(scale, scale)
         view.centerOn(self._pix_item)
+
+    # ── スライド切替アニメーション (v2.34) ────────────────────────────────
+    def _anim_enabled(self) -> bool:
+        return bool(self._audio_cfg("ss_anim_enabled", False))
+
+    def _anim_ms(self) -> int:
+        try:
+            return max(0, int(self._audio_cfg("ss_anim_ms", 350)))
+        except (TypeError, ValueError):
+            return 350
+
+    def _anim_type(self) -> str:
+        t = str(self._audio_cfg("ss_anim_type", "fade"))
+        if t == "random":
+            return random.choice(("fade", "slide_lr", "slide_ud", "zoom"))
+        if t in ("fade", "slide_lr", "slide_ud", "zoom"):
+            return t
+        return "fade"
+
+    def _commit_new(self, px: QPixmap):
+        """新画像を最終状態（pos 0,0 / scale 1 / fx 非表示）で描画。"""
+        self._pix_item.setPixmap(px)
+        self._scene.setSceneRect(QRectF(0, 0, px.width(), px.height()))
+        self._pix_item.setPos(0, 0)
+        self._pix_item.setScale(1.0)
+        self._hide_fx()
+        self._apply_view()
+
+    def _hide_fx(self):
+        if self._fx_item is not None:
+            self._fx_item.hide()
+            self._fx_item.setPixmap(QPixmap())
+            self._fx_item.setOpacity(1.0)
+
+    def _finish_transition(self):
+        """進行中のアニメを停止し、新画像の最終状態で確定させる。"""
+        self._anim_timer.stop()
+        self._anim_state = None
+        if self._pix_item is not None:
+            self._pix_item.setPos(0, 0)
+            self._pix_item.setScale(1.0)
+        self._hide_fx()
+
+    def _start_transition(self, old_px: QPixmap, new_px: QPixmap):
+        """旧→新の切替アニメを開始。dur<=0 は即時確定のみ。"""
+        self._finish_transition()          # 前回の残りを確定
+        self._commit_new(new_px)           # 新画像を最終状態へ
+        kind = self._anim_type()
+        dur = self._anim_ms()
+        if dur <= 0:
+            return
+        w, h = new_px.width(), new_px.height()
+        if w <= 0 or h <= 0:
+            return
+        if self._fx_item is None:
+            self._fx_item = QGraphicsPixmapItem()
+            self._fx_item.setZValue(10)
+            self._fx_item.setTransformationMode(Qt.TransformationMode.SmoothTransformation)
+            self._scene.addItem(self._fx_item)
+        try:
+            scaled = old_px.scaled(
+                w, h, Qt.AspectRatioMode.IgnoreAspectRatio,
+                Qt.TransformationMode.SmoothTransformation)
+        except Exception:
+            scaled = old_px
+        self._fx_item.setOpacity(1.0)
+        self._fx_item.setScale(1.0)
+        self._fx_item.setPos(0, 0)
+        self._fx_item.setPixmap(scaled)
+        self._fx_item.show()
+        # ズーム用に回転中心を画像中央へ
+        self._pix_item.setTransformOriginPoint(QPointF(w / 2.0, h / 2.0))
+        self._anim_state = {"kind": kind, "dur": dur, "t": 0, "w": w, "h": h}
+        self._anim_step()                  # 初帧を即時描画
+        if self._anim_state is not None:   # dur が短いと 1 帧で終わる事がある
+            self._anim_timer.start()
+
+    def _anim_step(self):
+        """_anim_timer の 1 tick。進捗を計算し各 item へ適用する。"""
+        st = self._anim_state
+        if st is None:
+            self._anim_timer.stop()
+            return
+        st["t"] += self._anim_timer.interval()
+        p = 1.0 if st["dur"] <= 0 else min(1.0, st["t"] / st["dur"])
+        e = p * p * (3.0 - 2.0 * p)        # smoothstep
+        kind = st["kind"]; w = st["w"]; h = st["h"]
+        fx = self._fx_item
+        if kind == "fade":
+            if fx is not None:
+                fx.setOpacity(1.0 - e)
+        elif kind == "slide_lr":
+            if fx is not None:
+                fx.setPos(-w * e, 0)
+            self._pix_item.setPos(w * (1.0 - e), 0)
+        elif kind == "slide_ud":
+            if fx is not None:
+                fx.setPos(0, -h * e)
+            self._pix_item.setPos(0, h * (1.0 - e))
+        elif kind == "zoom":
+            self._pix_item.setScale(1.25 - 0.25 * e)
+            if fx is not None:
+                fx.setOpacity(1.0 - e)
+        if p >= 1.0:
+            self._finish_transition()
 
     def _show_image(self):
         if not self._paths: return
@@ -5616,11 +5742,11 @@ class FullViewer(QDialog):
         osd.move(x, y)
 
     def _open_settings_from_viewer(self):
-        """⚙ ボタンハンドラ。parent の MainWindow._open_settings を呼ぶ。"""
+        """⚙ ボタンハンドラ。ビュアーでは音楽設定へ直行する。"""
         mw = self.parent()
         if mw is not None and hasattr(mw, "_open_settings"):
             try:
-                mw._open_settings()
+                mw._open_settings("music")
             except Exception:
                 pass
 
@@ -6979,7 +7105,32 @@ class SettingsDialog(QDialog):
         if loop_mode == "loop": self._rb_loop.setChecked(True)
         else: self._rb_stop.setChecked(True)
         lg.addWidget(self._rb_loop); lg.addWidget(self._rb_stop)
-        l1.addWidget(grp1); l1.addStretch()
+        l1.addWidget(grp1)
+        # ── スライド切替アニメーション (v2.34)
+        grp1b = QGroupBox(T("スライド切替アニメーション"))
+        fg = QFormLayout(grp1b)
+        self._ss_anim_enabled = QCheckBox(T("スライド送り時にアニメーションを再生"))
+        self._ss_anim_enabled.setChecked(bool(self._cfg.get("ss_anim_enabled", False)))
+        fg.addRow(self._ss_anim_enabled)
+        self._ss_anim_type = QComboBox()
+        for _code, _label in (("fade", T("フェード")), ("slide_lr", T("スライド（左右）")),
+                              ("slide_ud", T("スライド（上下）")), ("zoom", T("ズームイン")),
+                              ("random", T("ランダム（毎回くじ）"))):
+            self._ss_anim_type.addItem(_label, _code)
+        _at = str(self._cfg.get("ss_anim_type", "fade"))
+        _ai = self._ss_anim_type.findData(_at)
+        if _ai >= 0:
+            self._ss_anim_type.setCurrentIndex(_ai)
+        fg.addRow(T("種類:"), self._ss_anim_type)
+        self._ss_anim_ms = QSpinBox()
+        self._ss_anim_ms.setRange(0, 3000)
+        self._ss_anim_ms.setSingleStep(50)
+        self._ss_anim_ms.setSuffix(" ms")
+        self._ss_anim_ms.setSpecialValueText(T("即時（アニメなし）"))
+        self._ss_anim_ms.setValue(int(self._cfg.get("ss_anim_ms", 350)))
+        fg.addRow(T("長さ:"), self._ss_anim_ms)
+        l1.addWidget(grp1b)
+        l1.addStretch()
         tabs.addTab(t1, "FullViewer")
 
         # ── タブ2: 拡張子
@@ -7082,16 +7233,16 @@ class SettingsDialog(QDialog):
             bgm_form.addRow(T("BPM (0=無効):"), bpm_row)
             self._bpm_worker: _BpmDetectWorker | None = None
             self._ss_bgm_beat = QComboBox()
-            for b in (1, 2, 4, 8):
+            for b in (1, 2, 4, 8, 16):
                 self._ss_bgm_beat.addItem(f"{b} {T('拍')}", b)
             saved_beat = int(self._cfg.get("ss_bgm_beat", 4))
             bi = self._ss_bgm_beat.findData(saved_beat)
             if bi >= 0: self._ss_bgm_beat.setCurrentIndex(bi)
-            bgm_form.addRow(T("送り拍数:"), self._ss_bgm_beat)
+            bgm_form.addRow(T("送り拍数（BPM・波形同期 共通）:"), self._ss_bgm_beat)
             # 波形同期（実ビート時刻追従） v2.33
             self._ss_bgm_wavesync = QCheckBox(T("波形同期（実ビートに合わせる）"))
             self._ss_bgm_wavesync.setChecked(bool(self._cfg.get("ss_bgm_wavesync", False)))
-            self._ss_bgm_wavesync.setToolTip(T("曲の実際のビート検出時刻に合わせてスライドします。BPM 固定値より優先されます。"))
+            self._ss_bgm_wavesync.setToolTip(T("曲の実際のビート検出時刻に合わせてスライドします。上の送り拍数で間隔を選べ、BPM 固定値より優先されます。"))
             if not HAS_LIBROSA:
                 self._ss_bgm_wavesync.setEnabled(False)
                 self._ss_bgm_wavesync.setToolTip(T("librosa が未導入のため波形同期は無効です"))
@@ -7245,6 +7396,10 @@ class SettingsDialog(QDialog):
             self._cfg["ss_voice_enabled"]  = bool(self._ss_voice_enabled.isChecked())
             self._cfg["ss_voice_volume"]   = int(self._ss_voice_volume.value())
             self._cfg["ss_voice_speed"]    = float(self._ss_voice_speed.value())
+        if hasattr(self, "_ss_anim_enabled"):
+            self._cfg["ss_anim_enabled"] = bool(self._ss_anim_enabled.isChecked())
+            self._cfg["ss_anim_type"]    = str(self._ss_anim_type.currentData())
+            self._cfg["ss_anim_ms"]      = int(self._ss_anim_ms.value())
         self.accept()
 
     def focus_lora_tab(self):
@@ -7253,6 +7408,12 @@ class SettingsDialog(QDialog):
         self._tabs.setCurrentIndex(3)
         self._lora_edit.setFocus()
         self._lora_edit.selectAll()
+
+    def focus_music_tab(self):
+        """🎵 音楽タブを前面に出す（インデックス6: 言語/FullViewer/拡張子/LoRA/ロゴ/キャッシュ/音楽）。"""
+        self._tabs.setCurrentIndex(self._tabs.count() - 1)
+        if hasattr(self, "_ss_bgm_edit"):
+            self._ss_bgm_edit.setFocus()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -12307,6 +12468,9 @@ class MainWindow(QMainWindow):
         if focus_tab == "lora":
             from PySide6.QtCore import QTimer as _QT
             _QT.singleShot(0, dlg.focus_lora_tab)
+        elif focus_tab == "music":
+            from PySide6.QtCore import QTimer as _QT
+            _QT.singleShot(0, dlg.focus_music_tab)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             changed_exts = set(dlg._result_exts) != set(self._enabled_exts)
             logo_folder_text = str(dlg._cfg.get("logo_folder", "") or "").strip()

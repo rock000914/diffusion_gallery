@@ -4,6 +4,23 @@ PNG/画像メタデータビューア (PySide6版) — 更新履歴
 
 ---
 
+## [v2.34] 2026-11-21
+
+### 新機能
+- **スライド切替アニメーション**: スライドショーの送りを演出付きで切り替える。環境設定 > FullViewer タブに「スライド切替アニメーション」グループ（ON チェックボックス / 種類コンボ / 長さ ms スピン）を追加 [png_viewer.py:6982](file:///N:/マイドライブ/png_viwer/png_viewer.py#L6982)。設定キー `ss_anim_enabled` / `ss_anim_type` / `ss_anim_ms`。
+  - 種類: フェード（旧画像を不透明度 1→0 のディゾルブ）/ スライド左右 / スライド上下 / ズームイン / **ランダム（毎回くじ）** [png_viewer.py:5262-5360](file:///N:/マイドライブ/png_viwer/png_viewer.py#L5262-L5360)。
+  - 実装: 旧 pixmap を `_fx_item`（zValue 10, 新画像矩形へ拉伸）に退避し、`_anim_timer`（16ms tick）で smoothstep 補間した進捗を item の `opacity` / `pos` / `scale` へ直接適用する。`_on_pixmap_loaded` で `setPixmap` 前に旧 pixmap を捕捉して `_start_transition()` を呼ぶ。`QGraphicsPixmapItem` は QObject でないため `QPropertyAnimation` の対象にできず、タイマー駆動の自前トゥイーンを採用した。送り間隔が短くても前のアニメを `_finish_transition()` で即時確定してから再開するため、連打でも破綻しない [png_viewer.py:5228-5360](file:///N:/マイドライブ/png_viwer/png_viewer.py#L5228-L5360)。
+
+### 変更
+- **⚙（環境設定）ボタンはビュアーから開くと 🎵 音楽タブへ直行**するようにした。`_open_settings_from_viewer` → `mw._open_settings("music")`、`SettingsDialog.focus_music_tab()`（最終タブへ切替）を追加 [png_viewer.py:5618-5625](file:///N:/マイドライブ/png_viwer/png_viewer.py#L5618-L5625) / [png_viewer.py:12467-12469](file:///N:/マイドライブ/png_viwer/png_viewer.py#L12467-L12469)。ボタンツールチップも「環境設定（音楽タブへ）」に変更。
+- **波形同期の送り拍数を選択可能に**: 元々 `送り拍数`（`ss_bgm_beat`）を波形同期でも使用していたが分かりにくかったため、ラベルを「送り拍数（BPM・波形同期 共通）:」に変更し、選択肢に **16 拍** を追加（1/2/4/8/16）。波形同期のヒントにも拍数で間隔を選べる旨を明記 [png_viewer.py:7206-7216](file:///N:/マイドライブ/png_viwer/png_viewer.py#L7206-L7216)。
+
+### 検証
+- `.tmp/smoke_v234.py`: ① `focus_music_tab` で音楽タブ（最終インデックス）へ切替、② `_open_settings_from_viewer("music")` の委譲、③ `_anim_enabled/_anim_ms/_anim_type` の読取とランダム選択、④ `_start_transition` が kind ごとに `_fx_item` 表示・`_anim_ops` 起動・完了後に最終状態へ戻ることを offscreen で検証。
+- 既存 smoke（v2.32 群・v2.33 波形同期）も回帰 PASS。
+
+---
+
 ## [v2.33] 2026-11-21
 
 ### 新機能
