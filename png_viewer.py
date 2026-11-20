@@ -210,7 +210,7 @@ except ImportError:
 # ══════════════════════════════════════════════════════════════════════════════
 #  定数・設定
 # ══════════════════════════════════════════════════════════════════════════════
-APP_VERSION  = "v2.35.2"
+APP_VERSION  = "v2.35.3"
 APP_NAME     = "PNG Metadata Viewer"
 APP_AUTHOR   = "nemot"
 _APP_ICON_B64 = (
@@ -279,6 +279,9 @@ def Te(s):
 # キーは画面に表示される文字列そのもの。改行などを含む。未登録の文字列は
 # 日本語のまま表示される。
 _I18N_TABLE = {
+    '1拍（ドクン1回）': {"en": '1 beat (1 thump)', "zh": '1拍（咚1次）', "ko": '1박(두근 1회)'},
+    '2拍（ドクン2回）': {"en": '2 beats (2 thumps)', "zh": '2拍（咚2次）', "ko": '2박(두근 2회)'},
+    '3拍（ドクン3回）': {"en": '3 beats (3 thumps)', "zh": '3拍（咚3次）', "ko": '3박(두근 3회)'},
     '\n\nお気に入りから削除しますか？': {"en": '\n\nRemove from favorites?', "zh": '\n\n要从收藏中删除吗？', "ko": '\n\n즐겨찾기에서 삭제하시겠습니까?'},
     '\n\nこのファイルを ': {"en": '\n\nThis file ', "zh": '\n\n此文件', "ko": '\n\n이 파일을 '},
     '\n\n保存先を変える場合は settings.json に絶対パスの `thumb_cache_dir` を指定します。移行時は先に丸ごとコピーし、全件サイズ一致を確認してから元を削除してください（コピー先に `.fmt_version` が無いと起動時の自動消去で全キャッシュが消えます）。': {"en": '\n\nTo change the location, set an absolute path `thumb_cache_dir` in settings.json. When migrating, copy everything first, verify that all file sizes match, then delete the original (without `.fmt_version` in the destination, the automatic cleanup at startup will delete the entire cache).', "zh": '\n\n如需更改保存位置，请在 settings.json 中指定绝对路径 `thumb_cache_dir`。迁移时请先完整复制，确认所有文件大小一致后再删除原文件（如果目标位置没有 `.fmt_version`，启动时的自动清理会删除全部缓存）。', "ko": '\n\n저장 위치를 변경하려면 settings.json 에 절대 경로 `thumb_cache_dir` 를 지정하세요. 마이그레이션 시에는 먼저 전체를 복사하고 모든 파일 크기가 일치하는지 확인한 뒤 원본을 삭제하세요 (대상에 `.fmt_version` 이 없으면 시작 시 자동 정리로 전체 캐시가 삭제됩니다).'},
@@ -523,6 +526,7 @@ _I18N_TABLE = {
     'バージョン情報': {"en": 'About', "zh": '版本信息', "ko": '버전 정보'},
     'パスをコピーしました: ': {"en": 'Path copied: ', "zh": '已复制路径：', "ko": '경로를 복사했습니다: '},
     'パネル幅の設定': {"en": 'Panel width settings', "zh": '面板宽度设置', "ko": '패널 너비 설정'},
+    'パルス拍数（ドクン回数）:': {"en": 'Pulse beats (thump count):', "zh": '脉冲拍数（咚次数）：', "ko": '펄스 박수(두근 횟수):'},
     'パルス（ドクン）': {"en": 'Pulse (thump)', "zh": '脉冲（咚）', "ko": '펄스(두근)'},
     'ファイル / ': {"en": 'File / ', "zh": '文件 / ', "ko": '파일 / '},
     'ファイル(&F)': {"en": 'File(&F)', "zh": '文件(&F)', "ko": '파일(&F)'},
@@ -4780,6 +4784,7 @@ class FullViewer(QDialog):
         self._anim_state = None  # dict | None 進行中のトランジション情報
         self._shown_once = False  # [v2.35] 初回は遷移せず即時確定（残骸防止）
         self._cur_path = None  # [v2.35.2] 表示中の画像パス（同じ画像の再表示では遷移しない）
+        self._slide_dir = 1  # [v2.35.3] スライド方向: 1=次へ / -1=前へ（左右上下で反転）
         self._anim_timer = QTimer(self)
         self._anim_timer.setInterval(16)
         self._anim_timer.timeout.connect(self._anim_step)
@@ -5299,6 +5304,13 @@ class FullViewer(QDialog):
         except (TypeError, ValueError):
             return 350
 
+    def _anim_pulse_beats(self) -> int:
+        # [v2.35.3] パルス 1 回の「ドクン」回数 (1/2/3)。既定 1 拍。
+        try:
+            return min(3, max(1, int(self._audio_cfg("ss_anim_pulse_beats", 1))))
+        except (TypeError, ValueError):
+            return 1
+
     def _anim_pool(self) -> tuple:
         """ランダム選択の対象になるアニメ種別（ユーザーが有効にしたもの）。"""
         raw = self._audio_cfg("ss_anim_pool", None)
@@ -5386,7 +5398,8 @@ class FullViewer(QDialog):
             self._fx_item.setZValue(10)
             self._fx_item.setTransformationMode(Qt.TransformationMode.SmoothTransformation)
             self._scene.addItem(self._fx_item)
-        state = {"kind": kind, "dur": dur, "t": 0, "w": w, "h": h}
+        state = {"kind": kind, "dur": dur, "t": 0, "w": w, "h": h,
+                 "dir": getattr(self, "_slide_dir", 1)}
         if kind == "stripes":
             # グリッチ: 旧画像を薄く敷いた上へ新画像を縦縞で Assemble する。
             self._fx_item.hide()           # stripe_item が旧描画を兼ねる
@@ -5462,16 +5475,19 @@ class FullViewer(QDialog):
                 fx.setOpacity(1.0 - e)
         elif kind == "slide_lr":
             # 旧画像は中央に固定（上から新画像が横スライドで覆う）
-            self._pix_item.setPos(w * (1.0 - e), 0)
+            d = st.get("dir", 1)
+            self._pix_item.setPos(d * w * (1.0 - e), 0)
         elif kind == "slide_ud":
-            self._pix_item.setPos(0, h * (1.0 - e))
+            d = st.get("dir", 1)
+            self._pix_item.setPos(0, d * h * (1.0 - e))
         elif kind == "zoom":
             self._pix_item.setScale(1.25 - 0.25 * e)
             if fx is not None:
                 fx.setOpacity(1.0 - e)
         elif kind == "pulse":
-            # キック風: 中間でドクンと拡大し最後に 1.0 へ戻る
-            self._pix_item.setScale(1.0 + 0.15 * math.sin(math.pi * e))
+            # キック風: ドクンを n 回（拍数で選択, 既定1）。abs(sin) で n 個の膨らみ、終端は 1.0
+            n = self._anim_pulse_beats()
+            self._pix_item.setScale(1.0 + 0.15 * abs(math.sin(math.pi * n * e)))
             if fx is not None:
                 fx.setOpacity(max(0.0, 1.0 - e * 1.8))
         elif kind == "stripes":
@@ -5504,7 +5520,11 @@ class FullViewer(QDialog):
                                   new_small, QRectF(src_x, 0, src_w, new_small.height()))
         finally:
             qp.end()
+        # [v2.35.3 FIX] QPainter で描画すると _stripe_px は共有からデタッチされる。
+        # _stripe_item は旧バッファを参照したままなので、必ず setPixmap で再アタッチ
+        # しないと実アプリで縞が更新されず「機能しない」ように見えた。
         if self._stripe_item is not None:
+            self._stripe_item.setPixmap(px)
             self._stripe_item.update()
 
 
@@ -5570,6 +5590,7 @@ class FullViewer(QDialog):
     # ── ナビゲーション ────────────────────────────────────────────────────
     def _next(self):
         self._at_end = False
+        self._slide_dir = 1   # [v2.35.3] 次へ = 正方向スライド
         if self._idx >= len(self._paths) - 1:
             if self._loop_mode == "loop":
                 self._idx = 0; self._zoom = 1.0; self._show_image()
@@ -5581,6 +5602,7 @@ class FullViewer(QDialog):
 
     def _prev(self):
         self._at_end = False
+        self._slide_dir = -1  # [v2.35.3] 前へ = 逆方向スライド
         if self._idx <= 0:
             if self._loop_mode == "loop":
                 self._idx = len(self._paths) - 1; self._zoom = 1.0; self._show_image()
@@ -7338,6 +7360,19 @@ class SettingsDialog(QDialog):
         self._ss_anim_ms.setSpecialValueText(T("即時（アニメなし）"))
         self._ss_anim_ms.setValue(int(self._cfg.get("ss_anim_ms", 350)))
         fg.addRow(T("長さ:"), self._ss_anim_ms)
+        # [v2.35.3] パルスのドクン回数（1/2/3拍）。既定 1 拍。
+        self._ss_anim_pulse_beats = QComboBox()
+        for _n, _lab in ((1, T("1拍（ドクン1回）")), (2, T("2拍（ドクン2回）")),
+                         (3, T("3拍（ドクン3回）"))):
+            self._ss_anim_pulse_beats.addItem(_lab, _n)
+        try:
+            _pb = int(self._cfg.get("ss_anim_pulse_beats", 1))
+        except (TypeError, ValueError):
+            _pb = 1
+        _pi = self._ss_anim_pulse_beats.findData(max(1, min(3, _pb)))
+        if _pi >= 0:
+            self._ss_anim_pulse_beats.setCurrentIndex(_pi)
+        fg.addRow(T("パルス拍数（ドクン回数）:"), self._ss_anim_pulse_beats)
         l1.addWidget(grp1b)
         l1.addStretch()
         tabs.addTab(t1, "FullViewer")
@@ -7612,6 +7647,8 @@ class SettingsDialog(QDialog):
         if hasattr(self, "_ss_anim_pool_boxes"):
             self._cfg["ss_anim_pool"] = [
                 k for k in ANIM_KINDS if self._ss_anim_pool_boxes[k].isChecked()]
+        if hasattr(self, "_ss_anim_pulse_beats"):
+            self._cfg["ss_anim_pulse_beats"] = int(self._ss_anim_pulse_beats.currentData())
         self.accept()
 
     def focus_lora_tab(self):

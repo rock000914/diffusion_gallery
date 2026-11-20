@@ -4,6 +4,20 @@ PNG/画像メタデータビューア (PySide6版) — 更新履歴
 
 ---
 
+## [v2.35.3] 2026-11-21
+
+### 新機能（パルス拍数）
+- **パルスのドクン回数を 1/2/3 から選択**: 「パルスが2拍でスライドする。1拍にしたいが2拍・3拍も残したい」に対応。環境設定 > FullViewer のアニメグループに「パルス拍数（ドクン回数）」コンボ（1拍/2拍/3拍、既定 **1拍**）を追加し `ss_anim_pulse_beats` に保存 [png_viewer.py:7364-7375](file:///N:/マイドライブ/png_viwer/png_viewer.py#L7364-L7375)。`_anim_step` の pulse は `1.0 + 0.15*abs(sin(π·n·e))` で **n 個のドクン**を同じ長さ内で刻む [png_viewer.py:5488-5492](file:///N:/マイドライブ/png_viwer/png_viewer.py#L5488-L5492)（`_anim_pulse_beats()` は 1..3 にクランプ [png_viewer.py:5307](file:///N:/マイドライブ/png_viwer/png_viewer.py#L5307)）。
+
+### 修正
+- **ストライプ（スプライト）が機能しない**: `_paint_stripe` は `_stripe_px` を `QPainter` で描画時に暗黙的共有からデタッチするが、`_stripe_item` は旧バッファを参照したままだったため実アプリで縞が更新されず「動かない」ように見えた。描画後に必ず `self._stripe_item.setPixmap(px)` で再アタッチするよう修正 [png_viewer.py:5523-5528](file:///N:/マイドライブ/png_viwer/png_viewer.py#L5523-L5528)。
+- **スライド（左右上下）を進み/戻るで方向反転**: `_next` で `_slide_dir=1`、`_prev` で `_slide_dir=-1` を設定 [png_viewer.py:5593](file:///N:/マイドライブ/png_viwer/png_viewer.py#L5593) / [png_viewer.py:5605](file:///N:/マイドライブ/png_viwer/png_viewer.py#L5605)。`_start_transition` が state に `dir` を保持し、`_anim_step` の slide_lr/slide_ud が `d*w*(1-e)` / `d*h*(1-e)` で方向付きワイプ [png_viewer.py:5477-5482](file:///N:/マイドライブ/png_viwer/png_viewer.py#L5477-L5482)。次へは右/下から、前へは左/上から新画像が滑り込む。
+
+### 検証
+- `.tmp/smoke_v235.py` に追加: パルス beats=1/2/3 でドクン回数 1/2/3・既定1・1..3クランプ、slide dir が +1/-1 で符号反転、ストライプの `_stripe_item.pixmap()` に新画像ピクセルが反映（再アタッチ確認）。既存 smoke（v2.33〜v2.35.2）も回帰 PASS。
+
+---
+
 ## [v2.35.2] 2026-11-21
 
 ### 修正（ビューアー起動時にアニメが走る）
