@@ -209,7 +209,7 @@ except ImportError:
 # ══════════════════════════════════════════════════════════════════════════════
 #  定数・設定
 # ══════════════════════════════════════════════════════════════════════════════
-APP_VERSION  = "v2.31"
+APP_VERSION  = "v2.32"
 APP_NAME     = "PNG Metadata Viewer"
 APP_AUTHOR   = "nemot"
 _APP_ICON_B64 = (
@@ -337,6 +337,7 @@ _I18N_TABLE = {
     'AI評価キャッシュを再読込しました': {"en": 'Reloaded AI rating cache', "zh": '已重新加载 AI 评价缓存', "ko": 'AI 평가 캐시를 다시 불러왔습니다'},
     'AI評価表示: ': {"en": 'AI rating display: ', "zh": 'AI 评价显示：', "ko": 'AI 평가 표시: '},
     'AI速度: ': {"en": 'AI speed: ', "zh": 'AI 速度：', "ko": 'AI 속도: '},
+    'BGM': {"en": 'BGM', "zh": 'BGM', "ko": 'BGM'},
     'BGMフォルダ:': {"en": "BGM folder:", "zh": "BGM 文件夹：", "ko": "BGM 폴더:"},
     'BGMフォルダが設定されていません': {"en": "BGM folder is not set", "zh": "未设置 BGM 文件夹", "ko": "BGM 폴더가 설정되지 않았습니다"},
     'BGMフォルダを選択': {"en": "Select BGM folder", "zh": "选择 BGM 文件夹", "ko": "BGM 폴더 선택"},
@@ -390,6 +391,7 @@ _I18N_TABLE = {
     'transformers が見つかりません。\n\npython -m pip install transformers': {"en": 'transformers not found.\n\npython -m pip install transformers', "zh": '未找到 transformers。\n\npython -m pip install transformers', "ko": 'transformers 를 찾을 수 없습니다.\n\npython -m pip install transformers'},
     '※ LoRA名クリック時のCivitai検索と連携します': {"en": '※ Linked with Civitai search when clicking a LoRA name', "zh": '※ 点击 LoRA 名称时联动 Civitai 搜索', "ko": '※ LoRA 이름 클릭 시 Civitai 검색과 연동됩니다'},
     '※ フォルダ内の .mp3/.wav/.flac/.ogg/.m4a をランダム順でループ再生。拍同期は BGM の BPM のみ基準。': {"en": "※ Loops .mp3/.wav/.flac/.ogg/.m4a files in the folder in random order. Beat sync uses BGM BPM only.", "zh": "※ 文件夹内的 .mp3/.wav/.flac/.ogg/.m4a 文件以随机顺序循环播放。节拍同步仅以 BGM 的 BPM 为基准。", "ko": "※ 폴더 내 .mp3/.wav/.flac/.ogg/.m4a 파일을 랜덤 순서로 반복 재생합니다. 박자 동기화는 BGM 의 BPM 만 기준입니다."},
+    '※ ホットキー: [ ] = BGM ±5%, { } = 音声 ±5%': {"en": '※ Hotkeys: [ ] = BGM ±5%, { } = voice ±5%', "zh": '※ 快捷键：[ ] = BGM ±5%，{ } = 语音 ±5%', "ko": '※ 단축키: [ ] = BGM ±5%, { } = 음성 ±5%'},
     '※ ロゴを登録したときはここに保存されます。\n': {"en": '※ Registered logo images are saved here.\n', "zh": '※ 注册的 Logo 图片将保存在这里。\n', "ko": '※ 등록한 로고는 여기에 저장됩니다.\n'},
     '※ ロゴを登録したときはここに保存されます。\n※ 既定の保存先: ': {"en": '※ Registered logo images are saved here.\n※ Default location: ', "zh": '※ 注册的 Logo 图片将保存在这里。\n※ 默认保存位置：', "ko": '※ 등록한 로고는 여기에 저장됩니다.\n※ 기본 저장 위치: '},
     '※ 保存先を変更しても、ここに表示されている場所が現在の保存先です。': {"en": '※ Even if the location is changed, the path shown here is the current save location.', "zh": '※ 即使更改了保存位置，这里显示的仍然是当前保存位置。', "ko": '※ 저장 위치를 변경해도 여기에 표시된 경로가 현재 저장 위치입니다.'},
@@ -497,6 +499,7 @@ _I18N_TABLE = {
     'スライドショー時に再生': {"en": "Play during slideshow", "zh": "幻灯片播放时播放", "ko": "슬라이드쇼 중 재생"},
     'スライドショー音楽 OFF': {"en": "Slideshow music OFF", "zh": "幻灯片音乐 OFF", "ko": "슬라이드쇼 음악 OFF"},
     'スライドショー音楽 ON': {"en": "Slideshow music ON", "zh": "幻灯片音乐 ON", "ko": "슬라이드쇼 음악 ON"},
+    'ズーム:': {"en": 'Zoom: ', "zh": '缩放：', "ko": '확대:'},
     'タグ (プロンプト/ネガ/LoRA)': {"en": 'Tags (prompt/negative/LoRA)', "zh": '标签 (提示词/负面/LoRA)', "ko": '태그 (프롬프트/네거티브/LoRA)'},
     'タグ名（部分一致）:': {"en": 'Tag name (partial match):', "zh": '标签名（部分匹配）：', "ko": '태그 이름 (부분 일치):'},
     'タグ追加': {"en": 'Add tag', "zh": '添加标签', "ko": '태그 추가'},
@@ -740,6 +743,7 @@ _I18N_TABLE = {
     '現在のフォルダをお気に入りに追加': {"en": 'Add current folder to favorites', "zh": '将当前文件夹添加到收藏', "ko": '현재 폴더를 즐겨찾기에 추가'},
     '現在の表示対象 ': {"en": 'Currently showing ', "zh": '当前显示对象 ', "ko": '현재 표시 대상 '},
     '現行形式 .raw: ': {"en": 'Current .raw format: ', "zh": '当前格式 .raw：', "ko": '현재 형식 .raw: '},
+    '環境設定': {"en": 'Settings', "zh": '环境设置', "ko": '환경 설정'},
     '環境設定を保存しました': {"en": 'Settings saved', "zh": '已保存环境设置', "ko": '환경 설정을 저장했습니다'},
     '生成ステップ数の範囲。値が不明な画像は除外されます': {"en": 'Number of steps range. Images with unknown values are excluded.', "zh": '生成步数范围。值未知的图片将被排除。', "ko": '생성 스텝 수 범위. 알 수 없는 값의 이미지는 제외됩니다'},
     '生成パラメータ': {"en": 'Generation parameters', "zh": '生成参数', "ko": '생성 파라미터'},
@@ -785,6 +789,7 @@ _I18N_TABLE = {
     '読み込めませんでした: ': {"en": 'Could not load: ', "zh": '无法读取：', "ko": '불러올 수 없습니다: '},
     '送り拍数:': {"en": "Beats per advance:", "zh": "每张节拍数：", "ko": "장당 박자수:"},
     '送り間隔 (フレーム, 60fps 基準) / 1F≈16.67ms / 60F=1秒 / 180F=3秒': {"en": 'Interval (frames, 60fps base) / 1F≈16.67ms / 60F=1s / 180F=3s', "zh": '间隔（帧，60fps 基准）/ 1F≈16.67ms / 60F=1秒 / 180F=3秒', "ko": '간격 (프레임, 60fps 기준) / 1F≈16.67ms / 60F=1초 / 180F=3초'},
+    '速度': {"en": 'Speed', "zh": '速度', "ko": '속도'},
     '適用': {"en": 'Apply', "zh": '应用', "ko": '적용'},
     '配置': {"en": 'Layout', "zh": '排列', "ko": '배치'},
     '重複': {"en": 'Duplicates', "zh": '重复', "ko": '중복'},
@@ -806,10 +811,14 @@ _I18N_TABLE = {
     '閉じる (Esc/Enter)': {"en": 'Close (Esc/Enter)', "zh": '关闭 (Esc/Enter)', "ko": '닫기 (Esc/Enter)'},
     '開始': {"en": 'Start', "zh": '开始', "ko": '시작'},
     '開始 2026-01-01': {"en": 'Start 2026-01-01', "zh": '开始 2026-01-01', "ko": '시작 2026-01-01'},
+    '音声': {"en": 'Voice', "zh": '语音', "ko": '음성'},
     '音声フォルダ:': {"en": "Voice folder:", "zh": "语音文件夹：", "ko": "음성 폴더:"},
+    '音声・セリフ': {"en": 'Voice / Lines', "zh": '语音·台词', "ko": '음성·대사'},
     '音声・セリフフォルダを選択': {"en": "Select voice / lines folder", "zh": "选择语音·台词文件夹", "ko": "음성·대사 폴더 선택"},
     '音声・セリフ（拍同期なし、独立再生）': {"en": "Voice / Lines (no beat sync, independent)", "zh": "语音·台词（无节拍同步，独立播放）", "ko": "음성·대사 (박자 동기화 없음, 독립 재생)"},
+    '音量': {"en": 'Volume', "zh": '音量', "ko": '볼륨'},
     '音量:': {"en": "Volume:", "zh": "音量：", "ko": "볼륨:"},
+    '音量・速度調整': {"en": 'Volume / speed adjustment', "zh": '音量·速度调整', "ko": '볼륨·속도 조정'},
     '類似': {"en": 'Similar', "zh": '相似', "ko": '유사'},
     '類似画像: ': {"en": 'Similar images: ', "zh": '相似图片：', "ko": '유사 이미지: '},
     '類似画像を検索中...': {"en": 'Searching similar images...', "zh": '正在搜索相似图片...', "ko": '유사 이미지 검색 중...'},
@@ -4800,13 +4809,20 @@ class FullViewer(QDialog):
         zin_btn  = tbtn("🔍+", T("拡大 (+)")); zin_btn.clicked.connect(self._zoom_in)
         zout_btn = tbtn("🔍−", T("縮小 (-)")); zout_btn.clicked.connect(self._zoom_out)
         z1_btn   = tbtn("1:1", T("等倍 (0)")); z1_btn.clicked.connect(self._zoom_reset)
+        # [v2.32] 音量・速度調整ポップアップ + 環境設定ボタン
+        self._vol_btn = tbtn("🔊", T("音量・速度調整")); self._vol_btn.clicked.connect(self._open_volume_popup)
+        if not HAS_MULTIMEDIA:
+            self._vol_btn.setEnabled(False)
+            self._vol_btn.setToolTip(T("PySide6.QtMultimedia が無効"))
+        self._cfg_btn = tbtn("⚙", T("環境設定")); self._cfg_btn.clicked.connect(self._open_settings_from_viewer)
         close_btn= tbtn("✕", T("閉じる (Esc/Enter)")); close_btn.clicked.connect(self.close)
         close_btn.setStyleSheet(
             f"QPushButton{{background:#1e1e1e;color:{PAL['red']};border:1px solid #333;border-radius:4px;padding:0 8px;}}"
             f"QPushButton:hover{{background:{PAL['red']};color:#fff;}}")
 
         for w in [self._ss_btn, QLabel(T("F")), self._ss_spin, self._music_btn, self._fs_btn,
-                  self._fit_btn, rot_btn, zin_btn, zout_btn, z1_btn, close_btn]:
+                  self._fit_btn, rot_btn, zin_btn, zout_btn, z1_btn,
+                  self._vol_btn, self._cfg_btn, close_btn]:
             if isinstance(w, QLabel):
                 w.setStyleSheet(f"color:{PAL['fg2']};")
             tb.addWidget(w)
@@ -5136,7 +5152,7 @@ class FullViewer(QDialog):
             st = os.stat(path)
             mode = T("実寸") if self._fit_mode == "actual" else "fit"
             self._info_lbl.setText(
-                f"{os.path.basename(path)}  {px.width()}×{px.height()}  "f"{st.st_size//1024}KB  [{self._idx+1}/{len(self._paths)}]  "f"zoom:{self._zoom:.1f}x  {mode}{Te('  ←→ナビ  Space=全画面')}")
+                f"{os.path.basename(path)}  {px.width()}×{px.height()}  "f"{st.st_size//1024}KB  [{self._idx+1}/{len(self._paths)}]  "f"{Te('ズーム:')}{self._zoom*100:.0f}%  {mode}{Te('  ←→ナビ  Space=全画面')}")
         except Exception:
             pass
         self._prefetch_neighbors()     # [v2.17] 次は先読み済み＝送り待ちゼロにする
@@ -5449,6 +5465,149 @@ class FullViewer(QDialog):
         if self._voice_player is not None:
             self._voice_player.stop()
 
+    def _set_volume(self, kind: str, value: int):
+        """音量を 0-100 で設定。cfg 更新 + save_cfg + QAudioOutput 即時反映。
+        kind: 'bgm' | 'voice'"""
+        value = max(0, min(100, int(value)))
+        mw = self.parent()
+        if mw is not None and hasattr(mw, "_cfg"):
+            try:
+                mw._cfg[f"ss_{kind}_volume"] = value
+                save_cfg(mw._cfg)
+            except Exception:
+                pass
+        out = self._bgm_output if kind == "bgm" else self._voice_output
+        if out is not None:
+            try:
+                out.setVolume(value / 100.0)
+            except Exception:
+                pass
+        return value
+
+    def _set_speed(self, kind: str, rate: float):
+        """再生速度を 0.5-2.0 で設定。cfg 更新 + save_cfg + QMediaPlayer 即時反映。"""
+        rate = max(0.5, min(2.0, float(rate)))
+        mw = self.parent()
+        if mw is not None and hasattr(mw, "_cfg"):
+            try:
+                mw._cfg[f"ss_{kind}_speed"] = rate
+                save_cfg(mw._cfg)
+            except Exception:
+                pass
+        player = self._bgm_player if kind == "bgm" else self._voice_player
+        if player is not None:
+            try:
+                player.setPlaybackRate(rate)
+            except Exception:
+                pass
+        return rate
+
+    def _get_volume(self, kind: str) -> int:
+        return int(self._audio_cfg(f"ss_{kind}_volume", 80 if kind == "bgm" else 100))
+
+    def _adjust_bgm_volume(self, delta: int):
+        new = self._set_volume("bgm", self._get_volume("bgm") + delta)
+        self._flash_volume("bgm", new)
+
+    def _adjust_voice_volume(self, delta: int):
+        new = self._set_volume("voice", self._get_volume("voice") + delta)
+        self._flash_volume("voice", new)
+
+    def _flash_volume(self, kind: str, value: int):
+        """音量変更を一時的に info_lbl に表示（2秒で元に戻す）。"""
+        label = T("BGM") if kind == "bgm" else T("音声")
+        self._info_lbl.setText(f"🔊 {label}: {value}%")
+        QTimer.singleShot(2000, self._show_image)
+
+    def _open_settings_from_viewer(self):
+        """⚙ ボタンハンドラ。parent の MainWindow._open_settings を呼ぶ。"""
+        mw = self.parent()
+        if mw is not None and hasattr(mw, "_open_settings"):
+            try:
+                mw._open_settings()
+            except Exception:
+                pass
+
+    def _open_volume_popup(self):
+        """🔊 ボタンハンドラ。ツールバーボタンの下に音量・速度ポップアップを出す。"""
+        if not HAS_MULTIMEDIA:
+            return
+        if getattr(self, "_vol_popup", None) is None:
+            self._build_volume_popup()
+        # 現在値を再反映（設定タブから変更された可能性）
+        self._pop_bgm_vol.setValue(int(self._audio_cfg("ss_bgm_volume", 80)))
+        self._pop_voice_vol.setValue(int(self._audio_cfg("ss_voice_volume", 100)))
+        self._pop_bgm_speed.setValue(float(self._audio_cfg("ss_bgm_speed", 1.0)))
+        self._pop_voice_speed.setValue(float(self._audio_cfg("ss_voice_speed", 1.0)))
+        btn = self._vol_btn
+        self._vol_popup.move(btn.mapToGlobal(QPoint(0, btn.height())))
+        self._vol_popup.show()
+        self._vol_popup.raise_()
+
+    def _build_volume_popup(self):
+        """音量・速度調整用 Qt.Popup。既存の _build_adv_search_popup と同じパターン。"""
+        popup = QFrame(self)
+        popup.setWindowFlags(Qt.WindowType.Popup)
+        popup.setObjectName("vol_popup")
+        popup.setMinimumWidth(360)
+        popup.setStyleSheet(
+            f"QFrame#vol_popup{{background:{PAL['bg1']};"
+            f"border:1px solid {PAL['border']};border-radius:6px;}}"
+            f"QLabel{{background:transparent;color:{PAL['fg1']};}}"
+            f"QSlider::groove:horizontal{{height:4px;background:{PAL['bg3']};border-radius:2px;}}"
+            f"QSlider::handle:horizontal{{background:{PAL['accent']};width:12px;margin:-4px 0;border-radius:6px;}}"
+            f"QSpinBox,QDoubleSpinBox{{background:{PAL['bg2']};color:{PAL['fg1']};"
+            f"border:1px solid {PAL['border']};border-radius:3px;padding:2px 4px;min-height:18px;}}")
+        root = QVBoxLayout(popup)
+        root.setContentsMargins(10, 8, 10, 10)
+        root.setSpacing(6)
+
+        # BGM グループ
+        bgm_lbl = QLabel(T("BGM"))
+        bgm_lbl.setStyleSheet(f"color:{PAL['fg2']};font-weight:bold;")
+        root.addWidget(bgm_lbl)
+        bgm_row = QHBoxLayout()
+        self._pop_bgm_vol = QSlider(Qt.Orientation.Horizontal)
+        self._pop_bgm_vol.setRange(0, 100)
+        self._pop_bgm_vol.setValue(int(self._audio_cfg("ss_bgm_volume", 80)))
+        self._pop_bgm_vol.valueChanged.connect(lambda v: self._set_volume("bgm", v))
+        self._pop_bgm_speed = QDoubleSpinBox()
+        self._pop_bgm_speed.setRange(0.5, 2.0); self._pop_bgm_speed.setSingleStep(0.05)
+        self._pop_bgm_speed.setDecimals(2)
+        self._pop_bgm_speed.setValue(float(self._audio_cfg("ss_bgm_speed", 1.0)))
+        self._pop_bgm_speed.valueChanged.connect(lambda v: self._set_speed("bgm", float(v)))
+        bgm_row.addWidget(QLabel(T("音量")), 0)
+        bgm_row.addWidget(self._pop_bgm_vol, 1)
+        bgm_row.addWidget(QLabel(T("速度")), 0)
+        bgm_row.addWidget(self._pop_bgm_speed, 0)
+        root.addLayout(bgm_row)
+
+        # 音声グループ
+        voice_lbl = QLabel(T("音声・セリフ"))
+        voice_lbl.setStyleSheet(f"color:{PAL['fg2']};font-weight:bold;")
+        root.addWidget(voice_lbl)
+        voice_row = QHBoxLayout()
+        self._pop_voice_vol = QSlider(Qt.Orientation.Horizontal)
+        self._pop_voice_vol.setRange(0, 100)
+        self._pop_voice_vol.setValue(int(self._audio_cfg("ss_voice_volume", 100)))
+        self._pop_voice_vol.valueChanged.connect(lambda v: self._set_volume("voice", v))
+        self._pop_voice_speed = QDoubleSpinBox()
+        self._pop_voice_speed.setRange(0.5, 2.0); self._pop_voice_speed.setSingleStep(0.05)
+        self._pop_voice_speed.setDecimals(2)
+        self._pop_voice_speed.setValue(float(self._audio_cfg("ss_voice_speed", 1.0)))
+        self._pop_voice_speed.valueChanged.connect(lambda v: self._set_speed("voice", float(v)))
+        voice_row.addWidget(QLabel(T("音量")), 0)
+        voice_row.addWidget(self._pop_voice_vol, 1)
+        voice_row.addWidget(QLabel(T("速度")), 0)
+        voice_row.addWidget(self._pop_voice_speed, 0)
+        root.addLayout(voice_row)
+
+        hint = QLabel(T("※ ホットキー: [ ] = BGM ±5%, { } = 音声 ±5%"))
+        hint.setStyleSheet(f"color:{PAL['fg3']};font-size:8pt;")
+        root.addWidget(hint)
+
+        self._vol_popup = popup
+
     def _beat_interval_ms(self) -> int | None:
         """BGM の BPM と拍数から送り間隔 (ms) を計算。
         無効時（BGM OFF / BPM=0 / キュー空）は None を返し、呼び出し側が固定間隔にフォールバック。"""
@@ -5535,6 +5694,11 @@ class FullViewer(QDialog):
         elif k == Qt.Key.Key_0:     self._zoom_reset()
         elif k == Qt.Key.Key_S:     self._toggle_ss()
         elif k == Qt.Key.Key_Delete: self._delete_current()
+        # [v2.32] 音量調整ホットキー: [ ] = BGM ±5%, { } = 音声 ±5%
+        elif e.text() == '[': self._adjust_bgm_volume(-5)
+        elif e.text() == ']': self._adjust_bgm_volume(+5)
+        elif e.text() == '{': self._adjust_voice_volume(-5)
+        elif e.text() == '}': self._adjust_voice_volume(+5)
         else: super().keyPressEvent(e)
 
     # ── 削除 ──────────────────────────────────────────────────────────────

@@ -4,6 +4,29 @@ PNG/画像メタデータビューア (PySide6版) — 更新履歴
 
 ---
 
+## [v2.32] 2026-11-21
+
+### 新機能
+- **ビュアーにズーム率を % 表示**。`FullViewer._show_image` の info_lbl が `zoom:1.0x` 形式だったが、`ズーム:100%`（`Te('ズーム:')` + `self._zoom*100:.0f`）へ変更 [png_viewer.py:5146](file:///N:/マイドライブ/png_viwer/png_viewer.py#L5146)。等倍=100%、2倍=200% が直感的に分かる。
+- **音量調整ホットキー**を `keyPressEvent` に追加 [png_viewer.py:5583-5587](file:///N:/マイドライブ/png_viwer/png_viewer.py#L5583-L5587):
+  - `[` / `]` = BGM 音量 −5% / +5%
+  - `{` / `}` = 音声・セリフ 音量 −5% / +5%
+  - 変更後は `🔊 BGM: 75%` 形式で info_lbl に 2 秒表示（`_flash_volume`）。
+- **ツールバーに 🔊 / ⚙ ボタン**を追加 [png_viewer.py:4804-4808](file:///N:/マイドライブ/png_viwer/png_viewer.py#L4804-L4808)。
+  - 🔊 = 音量・速度調整ポップアップ（`_build_volume_popup`）。BGM / 音声・セリフ それぞれに 0-100 スライダーと 0.5-2.0 速度スピン。設定タブを開かなくても一時的な微調整が可能。`Qt.WindowType.Popup` の QFrame で、`_build_adv_search_popup` と同じパターン。
+  - ⚙ = 環境設定ダイアログを開く (`mw._open_settings()`)。
+  - `HAS_MULTIMEDIA=False`（PySide6.QtMultimedia 無し環境）では 🔊 は自動で無効化 + ツールチップで理由表示。
+
+### 内部
+- `FullViewer._set_volume(kind, value)` / `_set_speed(kind, rate)` / `_get_volume(kind)` / `_adjust_bgm_volume(delta)` / `_adjust_voice_volume(delta)` / `_flash_volume(kind, value)` / `_open_settings_from_viewer()` / `_open_volume_popup()` / `_build_volume_popup()` メソッドを新設。音量・速度は `ss_bgm_volume` / `ss_voice_volume` / `ss_bgm_speed` / `ss_voice_speed` の 4 キーで settings.json に保存（既存の `save_cfg()` を利用）。
+- i18n テーブルに 9 キー追加（`BGM` / `環境設定` / `ズーム:` / `※ ホットキー: ...` / `速度` / `音声` / `音声・セリフ` / `音量` / `音量・速度調整`）。英中韓訳付き、総エントリ数 618 → 627。
+- `APP_VERSION` を `v2.31` → `v2.32` へバンプ。
+
+### 検証
+- `.tmp/smoke_v232.py`: offscreen で FullViewer を作り、🔊 ポップアップ初期値（80/100/1.0/1.0）、スライダー/スピン値変更 → cfg 反映、`[`/`{` ホットキー音量 ±5 と info_lbl 表示、⚙ で `mw._open_settings` 呼び出し、全てパス。
+
+---
+
 ## [v2.31] 2026-11-21
 
 ### リファクタリング

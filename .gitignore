@@ -26,3 +26,8 @@ work5_*/
 # 実行時キャッシュ/設定(ローカルアプリデータ側にあるのが正規)
 overlay_settings.json
 settings.json
+
+# v2.29 以降: 音楽再生機能のサンプル/キャッシュ置き場。実体は公開しない。
+bgm/
+voice/
+bpm_cache.json
