@@ -49,7 +49,7 @@ python -m pip install -r requirements.txt
 3. **保存しているトークンを点検** — 不要・過剰な権限のトークンを削除し、使うなら「Fine-grained token」で対象リポジトリと必要な権限だけに絞る・有効期限を設ける。
    https://github.com/settings/tokens
 4. **ブランチ保護 + 署名コミット** — `main` へ force-push や未レビュー変更が直接入らないようにする。コミットに署名（verified）を付けられると、後から他人が仕込んだ変更かを見分けやすい。
-   https://github.com/rock000914/png_viwer/settings/branches
+   https://github.com/rock000914/diffusion_gallery/settings/branches
 
 ---
 

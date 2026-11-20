@@ -16,7 +16,7 @@ PNG/画像メタデータビューア（PySide6・単一ファイル `png_viewer
 - **作業を始める前と、動く状態に達した後にコミットする。** これで事故時も `git restore` / `git checkout <sha> -- <file>` で一発復帰できる。
 - `git add -A` を安易に使わない。`.gitignore` に無い意図しないファイル（キャッシュ・バックアップ・画像）を巻き込まないため、**対象パスを明示して add** する。
 - 本体 `png_viewer.py` は要追跡。未追跡のまま放置しない。
-- `push`（GitHub `rock000914/png_viwer`）は**ユーザーに依頼されたときだけ**実行する。
+- `push`（GitHub `rock000914/diffusion_gallery`）は**ユーザーに依頼されたときだけ**実行する。
 
 ## バージョン管理
 - `png_viewer.py` を変更したら `APP_VERSION` を上げ、CHANGELOG.md に同日の節を追記する。

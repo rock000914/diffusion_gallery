@@ -13,7 +13,8 @@ PNG/画像メタデータビューア (PySide6版) — 更新履歴
   - **除外**: 一時ファイル（`tmp*`）・バックアップ（`*.bak*` / `*backup*`）・再生成可能な `meta_cache.pkl` / `debug.log` は引き継がない。
   - **非破壊**: 旧フォルダは削除せずそのまま保持（移行後にユーザーがゴミ箱行きで整理可能）。`thumb_cache_dir` を绝对パスで別ドライブへ移している設定は、`settings.json` ごと引継ぐため追加作業は不要。
   - **反映の順序**: 実行中のビューアは旧コード・旧フォルダに書き続けるため、**全インスタンスを閉じてから新版を起動**するとその起動時に自動移行される（起動時に数百 MB の `meta_cache`/`thumbs` を 1 度コピーするため初回だけ数十秒かかる場合あり）。
-- **未変更**: 物理ファイル名 `png_viewer.py` / `png_viewer.spec`、リポジトリ `rock000914/png_viwer`、環境変数 `PNG_VIEWER_DEFAULT_FOLDER` は据え置き（今回のスコープ外）。旧 `png_viewer` 名義のデータフォルダは `AppData\Local\png_viewer_cache`（現行コードから参照されない遺跡）として残置。
+- **GitHub リポジトリを改名**: `rock000914/png_viwer` → **`rock000914/diffusion_gallery`**（GitHub REST API で owner 側リネーム）。ローカル `origin` の fetch/push URL を新名へ更新し、`AGENTS.md` / `SECURITY.md` のリポジトリ参照も追随。GitHub は旧名→新名へ自動リダイレクトするため既存の star/fork/issue/リンクは維持される。
+- **未変更**: 物理ファイル名 `png_viewer.py` / `png_viewer.spec`、**ローカルフォルダ名** `マイドライブ\png_viwer`、環境変数 `PNG_VIEWER_DEFAULT_FOLDER` は据え置き（コードの file:// 参照やワークスペースパスに影響するため）。旧 `png_viewer` 名義のデータフォルダは `AppData\Local\png_viewer_cache`（現行コードから参照されない遺跡）として残置。
 
 ### 検証
 - `.tmp/smoke_v238.py`（**22 check**）: `APP_NAME`/`APP_DIR`/`LEGACY_APP_DIR`/`SETTINGS_FILE` の命名、源码の `png_viewer` リテラルがレガシー定数のみ、`_migrate_legacy_app_dir` が設定・各種キャッシュ・`thumbs/`・`logo/` を移行し `meta_cache.pkl`/`debug.log`/`tmp*`/`.bak`/`*backup*` を除外、旧フォルダ保持、**2 回目はガードで上書きしない**、旧フォルダ無しは no-op。**テストは `LOCALAPPDATA` を一時へ退避して実行し、実 AppData に `diffusion_gallery` を作らないことを確認**。既存 `smoke_v236`(79)/`smoke_v237`(25) も `LOCALAPPDATA` 退避で回帰 ALL PASS。`py_compile` OK。
@@ -499,7 +500,7 @@ PNG/画像メタデータビューア (PySide6版) — 更新履歴
 
 ## [v2.04]〜[v2.22] のセクションは欠落しています
 
-> v2.04〜v2.22（約19バージョン分）は、本作業中の誤った上書きでローカルから失われました。ローカルの git・GitHub（`rock000914/png_viwer` の CHANGELOG は **v2.03 が最終コミット**で以降は未更新）・`.tmp/` のいずれにも v2.04 以降の本文はありません。**v2.23〜v2.26 は今回のセッション記録から原文どおり復元済み**です。
+> v2.04〜v2.22（約19バージョン分）は、本作業中の誤った上書きでローカルから失われました。ローカルの git・GitHub（`rock000914/diffusion_gallery`（旧 `png_viwer`）の CHANGELOG は **v2.03 が最終コミット**で以降は未更新）・`.tmp/` のいずれにも v2.04 以降の本文はありません。**v2.23〜v2.26 は今回のセッション記録から原文どおり復元済み**です。
 >
 > 取り戻し方: Google ドライブで `png_viwer` フォルダ → `CHANGELOG.md` を右クリック →「バージョン履歴」→ 上書き前（v2.22 まで揃った版）を開いて復元 → 私に渡してください。v2.23〜v2.26 と重複しないよう統合します。
 
