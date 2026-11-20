@@ -1198,13 +1198,71 @@ def set_lineage_overrides(mapping) -> None:
 def get_lineage_overrides() -> dict:
     return dict(_MODEL_LINEAGE_OVERRIDES)
 
-def resolve_lineage(model: str, raw: str = "") -> str:
-    """系統判定の単一の入口。まず保存済みテーブル（手動編集を最優先）を引き、
-    無ければ自動判定 classify_base_model() にフォールバックする。"""
+def reconcile_lineage_overrides(mapping) -> dict:
+    """起動時に model_lineage を現 classify_base_model と突き合わせ、**判定順序バグで
+    特定系統が sd/sdxl に潰された残骸**だけを再昇格して返す（変更有りなら dict、無しは None）。
+    - 保存値が汎用 (sd / sdxl) のときのみ対象 → 手を加えた具体系統や anima・raw 指紋由来の
+      値、cm-info 由来の値は原則そのまま残る。
+    - 手動で sd/sdxl に張った意図とは通常衝突しない（その名前は分類器が別系統を出す＝
+      分類器は張った値より信頼できる、という前提）。"""
+    if not isinstance(mapping, dict):
+        return None
+    changed = False
+    out = {}
+    for k, v in mapping.items():
+        nv = v
+        if isinstance(v, str) and v in ("sd", "sdxl") and isinstance(k, str):
+            c = classify_base_model(k)
+            if c and c != "other" and c in _LINEAGE_KEYS and c != v:
+                nv = c
+                changed = True
+        out[k] = nv
+    return out if changed else None
+
+# ── LoRA 名の補助判定 ──────────────────────────────────────────────────────
+# [v2.36] チェックポイント名だけでは系統が割れないモデル（pornmasterAnime_ilV5 等）は、
+# 併用 LoRA の名前がベース系統を示すことが多い（例: *-illustriousxl-lora → Illustrious）。
+# LoRA は通常ベース専用なので有効だが、異種ベースの LoRA（Illustrious に anima LoRA 等）で
+# 誤爆しないよう、チェックポイント名が other/未分類のときだけ補助として使い、
+# anima / 汎用 sd・xl は候補から除外する（これらの語は LoRA 名に出てもベースを保証しない）。
+_LORA_HINT_TOKENS = [
+    ("illust", "illustrious"), ("ilxl", "illustrious"),
+    ("noobai", "noobai"), ("noob", "noobai"),
+    ("pony", "pony"),
+    ("lumina", "lumina"),
+    ("minimax", "minimax"), ("mini_max", "minimax"),
+    ("krea", "krea"),
+    ("klein", "klein"),
+    ("flux", "flux"),
+    ("qwen", "qwen"),
+    ("wan2", "wan"), ("wan 2", "wan"),
+    ("z-image", "zit"), ("zimage", "zit"),
+    ("ernie", "ernie"),
+]
+
+def _lineage_from_loras(loras) -> str:
+    """LoRA 名リストからベース系統の推定（無ければ空文字）。"""
+    if not loras:
+        return ""
+    blob = " ".join(str(x).lower() for x in loras)
+    for tok, fam in _LORA_HINT_TOKENS:
+        if tok in blob:
+            return fam
+    return ""
+
+def resolve_lineage(model: str, raw: str = "", loras=None) -> str:
+    """系統判定の単一の入口。優先順は
+    (1) 保存済みテーブル（手動編集を最優先）→ (2) モデル名の自動判定 →
+    (3) LoRA 名による補助（名前が other のときだけ）。名前なしは空を返す。"""
     ov = _MODEL_LINEAGE_OVERRIDES.get(model)
     if ov:
         return ov
-    return classify_base_model(model, raw)
+    res = classify_base_model(model, raw)
+    if res and res != "other":
+        return res
+    if res == "":
+        return ""
+    return _lineage_from_loras(loras) or res
 
 
 def get_default_image_folder() -> str:
@@ -3562,7 +3620,7 @@ class FilterWorker(QThread):
                         continue
                 if mq and m.get("model") != mq: continue
                 if bq:
-                    _bk = resolve_lineage(m.get("model", ""), m.get("raw", ""))
+                    _bk = resolve_lineage(m.get("model", ""), m.get("raw", ""), m.get("loras"))
                     if bq == "other":
                         if _bk != "other":
                             continue
@@ -3665,7 +3723,7 @@ class ModelListWorker(QThread):
             m = self._meta.get(p)
             if not m: continue
             if m.get("model"): models.add(m["model"])
-            lk = resolve_lineage(m.get("model", ""), m.get("raw", ""))
+            lk = resolve_lineage(m.get("model", ""), m.get("raw", ""), m.get("loras"))
             if lk:
                 lineages.add(lk)
                 nm = m.get("model", "")
@@ -4321,7 +4379,7 @@ class VirtualGrid(QWidget):
     def _apply_badge(self, cell):
         """セルの系統バッジを META キャッシュから設定する（I/O なし peek 使用）。"""
         meta = META.peek(cell.path) or {}
-        key = resolve_lineage(meta.get("model", ""), meta.get("raw", ""))
+        key = resolve_lineage(meta.get("model", ""), meta.get("raw", ""), meta.get("loras"))
         text, bg = LINEAGE_BADGES.get(key, ("", None))
         cell.set_lineage_badge(text, bg)
 
@@ -8489,6 +8547,14 @@ class MainWindow(QMainWindow):
 
         self._cfg = load_cfg()
         set_lineage_overrides(self._cfg.get("model_lineage") or {})   # [v2.36] 保存済み系統対応を復元
+        _healed = reconcile_lineage_overrides(self._cfg.get("model_lineage") or {})  # [v2.36] 潰れた残骸を起動時に自己修復
+        if _healed:
+            self._cfg["model_lineage"] = _healed
+            set_lineage_overrides(_healed)
+            try:
+                save_cfg(self._cfg)
+            except Exception:
+                pass
         _logo_cfg = str(self._cfg.get("logo_folder", "") or "").strip()
         set_logo_dir(_logo_cfg or get_logo_dir())
         self._cfg["logo_folder"] = str(get_logo_dir())

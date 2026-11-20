@@ -25,8 +25,23 @@ PNG/画像メタデータビューア (PySide6版) — 更新履歴
 - **既存 `model_lineage` の修復**: バグ中に自動保存された誤エントリへ反映。`resolve_lineage` は保存値を優先するため、**汎用(sd/sdxl/other)→特定系統への昇格のみ**を名前再判定で検出し 4 件を修正（`waiIllustriousSDXL_v150/160/170`→illustrious、`autismmixSDXL_autismmixPony`→pony）。raw 指紋由来の anima 等は name 再判定で other に落ちるため非対象（保持）。作業前に `settings.json` を同フォルダへバックアップ済み。
 - **再判定の案内**: 判定を今後改良したら、`settings.json` の `model_lineage` 該当キー（または全体）を削除して再スキャンで付け直せる（スキャンは raw を持つので anima 指紋も復元）。手動確定の値は残す。
 
+### 追加（LoRA 名による補助判定）
+- **ベース名の薄いモデルを LoRA 名で救う**: `pornmasterAnime_ilV5` のようにチェックポイント名に系統語が薄く `other` になるモデルは、併用 LoRA 名（例 `*-illustriousxl-lora`）がベース系統を示す点を利用。`resolve_lineage(model, raw, loras)` に拡張し、**名前が other のときだけ** LoRA 名から `illustrious / pony / noobai / flux / qwen / lumina / minimax / krea / klein / wan / zit / ernie / moss` を補助判定。異種 LoRA での誤爆を防ぐため `anima` と汎用 `sd/xl` は補助候補から除外し、名前が既に `sdxl` 等のときは発動しない。badge/フィルタ/ワーカー/系統ドロップダウンの全経路が `m["loras"]` を渡す。 [png_viewer.py:1207-1244](file:///N:/マイドライブ/png_viwer/png_viewer.py#L1207-L1244)
+- **手がかりゼロのモデルはレジストリで確定**: `spicymix_v2` は名前・LoRA・生成環境すべてに系統語が無く自動判定不能。`model_lineage` に `"spicymix_v2":"sdxl"` を追記して確定（作成前に settings.json をバックアップ）。同種の既知別名モデルも同じ要領で1行追加できる。
+
+### 追加（ComfyUI-Manager の `.cm-info.json` を系統シードに）
+- **オフラインで権威値を取り込む**: ComfyUI-Manager がダウンロード時にモデル横へ書く `<name>.cm-info.json` の `BaseModel`（例 `Illustrious / Anima / Pony / NoobAI / SD 1.5 / SDXL 1.0 / Flux.1 D / Qwen / MOSS Image / MiniMax H3 / Krea 2 …`）は、Civitai が著者が宣言した系統を記録した権威データ。ネットワークも API も使わず、ローカル走査だけで系統が確定できる。チェックポイント名（=PNG の `Model:` = safetensors の stem）で `model_lineage` に反映する harvest を実施（`.tmp/cm_harvest.py`、再実行で追補可能）。`Unknown`/`Other`・VAE 誤ラベル（`sdxl_vae` 等）は除外。
+- **今回の実データ反映（H:\StabilityMatrix\Models、checkpoint sidecar 31 件中 30 件を系統化）**: 追加 7（`One obsession_Matureanima29B`→anima, `animeCollection_v20`→illustrious, `beautifulRealistic_v7`→sd, `novaMatureAM_v2029B`→anima, `pornmasterAnime_ilV5`→illustrious, `realBeautifulAsian_v10`→sd, `v1-5-pruned-emaonly`→sd）／上書き 4（`waiIllustriousSDXL_v160/170`: sdxl→illustrious, `dogepointNAI_dogenaiBETAEPS`: anima→illustrious, `pornmasterPro_noobV1VAE`: noobai→illustrious）。作成前に settings.json をバックアップ（`*.bak_*_pre_cmharvest`）。registry は 109→116 件。
+- **設計方針**: ランタイムに cm-info を読む仕組み（モデル root 設定＋毎画像 IO）は重いので不採用。registry を唯一の真実ソースとし、オフライン harvest と自動保存・手動編集で維持する。sidecar の無い rename 系（`spicymix_v2` 等）は従来どおり registry 1 行で確定。
+
+### 修正（起動時にレジストリの残骸を自己修復）
+- **症状**: `waiIllustriousSDXL_v170` 等が `sdxl` 表示のまま `illustrious` に戻らない。分類器自体は正しい（illustrious）が、**判定順序バグの時期に `model_lineage` へ誤値 `sdxl` が凍結**され、override が最優先で上書きしていた。
+- **ファイル編集が効かない理由**: 起動中のビューアが起動時の古いメモリを `save_cfg` で丸ごと settings.json に再書き込みするため、外部からの直接編集（harvest 含む）は次の保存で潰れる（実測: 116→clobber→140、wai は sdxl に逆戻り、`spicymix` も別値へ変化）。**恒久策はアプリ側のコード修正のみ**。
+- **`reconcile_lineage_overrides()`（[png_viewer.py:1201-1220](file:///N:/マイドライブ/png_viwer/png_viewer.py#L1201-L1220)）**: 起動時に `model_lineage` を読み込んだ直後、**保存値が汎用 `sd`/`sdxl` のキーだけ**を現 `classify_base_model(name)` が弾く**特定系統へ再昇格**し、変更があれば即 `save_cfg` で永続化 [png_viewer.py:8548-8557](file:///N:/マイドライブ/png_viwer/png_viewer.py#L8548-L8557)。`other`（=分類不能）は触らないので、`spicymix` の様な手動確定値や `nova*` の anima/raw 指紋・cm-info 由来の具体値は保持される。以後スキャンの `_persist` は既存キーを新規追加で上書きしないので修復値は維持される。
+- **反映にはビューアの再起動が必要**（起動中プロセスは修正前のコード）。
+
 ### 検証
-- `.tmp/smoke_v236.py`（54 check）: 17 系統それぞれの名称→系統、`sdxl` が `xl`/`sd` より優先、単語境界ガード（swan/rapid/animal/excellent/mossy 等で誤爆しない）、実画像相当 raw→anima・名称のみ→other、pony が指紋より優先、`GROUP` と `BADGE` のキー一致。**判定順序回帰（illust/pony + SDXL 併記で特定系統が勝つ／純正 sdxl・単独 xl は sdxl）**。レジストリは保存対応が自動を上書き／不正系統IDは除外／`other` 非保存／既存キー非上書き／新規のみ追加／変更時だけ再描画。実 PNG `00159-2971785256.png` の end-to-end 判別 = `anima`（手動 override で `other` に変更可）。既存 smoke（v2.33〜v2.35.2）も回帰 PASS。
+- `.tmp/smoke_v236.py`（**70 check**）: 17 系統それぞれの名称→系統、`sdxl` が `xl`/`sd` より優先、単語境界ガード（swan/rapid/animal/excellent/mossy 等で誤爆しない）、実画像相当 raw→anima・名称のみ→other、pony が指紋より優先、`GROUP` と `BADGE` のキー一致。**判定順序回帰（illust/pony + SDXL 併記で特定系統が勝つ／純正 sdxl・単独 xl は sdxl）**。**LoRA 補助 9 項目（illustriousxl/pony/noobai 救済・`anima` は補助不採用・名前優先・`sdxl` 時は非発動・手がかり無し→other）**。レジストリは保存対応が自動を上書き／不正系統IDは除外／`other` 非保存／既存キー非上書き／新規のみ追加／変更時だけ再描画。実 PNG `00159-2971785256.png` の end-to-end 判別 = `anima`（手動 override で `other` に変更可）。既存 smoke（v2.33〜v2.35.2）も回帰 PASS。cm-info harvest は権威 `BaseModel` 分布・VAE 誤ラベル除外・`--apply` 前後の差分表示と invalid-value 0 件を実測確認。**reconcile 起動修復 8 項目（wai/autismmix の sdxl→特定へ昇格・手動 flux/分類 other の sdxl/anima 具体値は保持・変無なら None）**。実 PNG `00101-3639050915.png`（`waiIllustriousSDXL_v170`）の registry 誤値 `sdxl` が reconcile で `illustrious` へ修復されることを実データで確認。
 
 ---
 
