@@ -4,6 +4,20 @@ PNG/画像メタデータビューア (PySide6版) — 更新履歴
 
 ---
 
+## [v2.32.4] 2026-11-21
+
+### バグ修正
+- **スライドショーの送り間隔（フレーム数）スピンがキーボードで変更できない**問題を修正。v2.27 の重なり修正時に `self._ss_spin.setFocusPolicy(Qt.FocusPolicy.NoFocus)` を設定していたため、フォーカスを受け取れず数字入力も矢印増減も効かなかった。
+  - `NoFocus` → `StrongFocus` に変更し、編集を可能に [png_viewer.py:4787-4791](file:///N:/マイドライブ/png_viwer/png_viewer.py#L4787-L4791)。
+  - `editingFinished` → `_on_ss_spin_done()` でフォーカスをビューアへ返し、編集直後から `S`/`←→`/`Space` などのホットキーを再使用可能に [png_viewer.py:5712-5714](file:///N:/マイドライブ/png_viwer/png_viewer.py#L5712-L5714)。
+  - `valueChanged` → `_on_ss_spin_changed()`。スライドショー実行中にフレーム数を変えると、拍同期（BGM）でない場合のみタイマー間隔へ即時反映（120F=2000ms → 60F=1000ms など）。拍同期中はフレーム数が基準でないので再適用しない [png_viewer.py:5716-5722](file:///N:/マイドライブ/png_viwer/png_viewer.py#L5716-L5722)。
+
+### 検証
+- `.tmp/smoke_v232_4.py`（`windows` 実機 + `QTest`）: ①focusPolicy=StrongFocus、②`keyClicks("120")+Enter` で値=120、③編集完了でフォーカスが FullViewer へ戻る、④↑↓で 121/120 に増減、⑤SS 実行中に 60F へ変更すると `QTimer.interval()` が 2000→1000ms へ再適用。全 PASS。
+- 既存 smoke（v2.32 OSD / v2.32.2 最大化復元 / v2.32.3 ポップアップクランプ）も回帰 PASS。
+
+---
+
 ## [v2.32.3] 2026-11-21
 
 ### バグ修正

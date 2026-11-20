@@ -209,7 +209,7 @@ except ImportError:
 # ══════════════════════════════════════════════════════════════════════════════
 #  定数・設定
 # ══════════════════════════════════════════════════════════════════════════════
-APP_VERSION  = "v2.32.3"
+APP_VERSION  = "v2.32.4"
 APP_NAME     = "PNG Metadata Viewer"
 APP_AUTHOR   = "nemot"
 _APP_ICON_B64 = (
@@ -4784,7 +4784,12 @@ class FullViewer(QDialog):
         # 幅48px だと up/down ボタンと数字が重なる（実環境で「3」が矢印の下に沈む）
         # → ボタン幅 16px + 数字側 padding を確保し、sub-control を明示配置する
         self._ss_spin.setFixedWidth(80); self._ss_spin.setFixedHeight(28)
-        self._ss_spin.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        # [v2.32.4] NoFocus だと数字入力・矢印操作がキーボードで効かなかった。
+        # StrongFocus にして編集可能にし、編集完了後はフォーカスをビューアへ返す
+        # （S/←→/Space などのホットキーをすぐ使えるようにするため）。
+        self._ss_spin.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self._ss_spin.editingFinished.connect(self._on_ss_spin_done)
+        self._ss_spin.valueChanged.connect(self._on_ss_spin_changed)
         self._ss_spin.setStyleSheet(
             f"QSpinBox{{background:#1e1e1e;color:{PAL['fg1']};"
             f"border:1px solid #333;border-radius:4px;padding-left:8px;}}"
@@ -5709,6 +5714,17 @@ class FullViewer(QDialog):
         return max(16, int(interval))
 
     # ── スライドショー ────────────────────────────────────────────────────
+    def _on_ss_spin_done(self):
+        """フレーム数スピンでの編集完了後、フォーカスをビューアへ戻す。"""
+        self.setFocus()
+
+    def _on_ss_spin_changed(self, _val):
+        """スライドショー実行中にフレーム数を変えたら間隔へ即時反映。
+        拍同期（BGM）中はフレーム数が基準でないので再適用しない。"""
+        if self._ss_job and self._ss_job.isActive():
+            if self._beat_interval_ms() is None:
+                self._ss_job.start(max(16, int(self._ss_spin.value() * 1000 / 60)))
+
     def _toggle_ss(self):
         if self._ss_job and self._ss_job.isActive():
             self._ss_job.stop(); self._ss_btn.setText("▶ SS")
