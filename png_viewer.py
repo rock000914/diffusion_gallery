@@ -224,7 +224,7 @@ except Exception:
 # ══════════════════════════════════════════════════════════════════════════════
 #  定数・設定
 # ══════════════════════════════════════════════════════════════════════════════
-APP_VERSION  = "v2.38.5"
+APP_VERSION  = "v2.38.6"
 APP_NAME     = "Diffusion Gallery"
 VOLUME_MAX   = 400   # voice 音量スライダー上限(%)。100超は再生前 PCM 増幅(temp)で実現
 APP_AUTHOR   = "nemot"
@@ -4090,6 +4090,7 @@ class VirtualGrid(QWidget):
         self._resize_timer.setInterval(120)
         self._resize_timer.timeout.connect(self._on_resize_settle)
         self._last_cols: int = 0
+        self._last_render_ts: float = 0.0  # [v2.38.6] スクロール描画スロットル用
 
         # ── ラバーバンド（ドラッグ範囲選択）
         from PySide6.QtWidgets import QRubberBand
@@ -4304,6 +4305,7 @@ class VirtualGrid(QWidget):
 
     def _render_visible(self):
         """ビューポートに見える範囲のセルだけ生成・不要なセルは破棄"""
+        self._last_render_ts = time.perf_counter()
         if not self._paths: return
         cols = self._last_cols or self._calc_cols()
         r0, r1 = self._visible_row_range(cols)
@@ -4368,7 +4370,11 @@ class VirtualGrid(QWidget):
 
     def _on_scroll_value(self, _):
         self._update_ruler()
-        self._render_visible()
+        # [v2.38.6] スクロール中は _render_visible を _SCROLL_DEBOUNCE 間隔に
+        # 制限（以前は valueChanged ごとに即実行 + 停止後の二重実行でUIスレッドを圧迫）。
+        # 停止後は _render_timer が必ず最終描画を行うため表示は正しい。
+        if time.perf_counter() - self._last_render_ts >= self._SCROLL_DEBOUNCE / 1000.0:
+            self._render_visible()
         self._render_timer.start()
 
     def _refresh_cell_colors(self):
