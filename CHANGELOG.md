@@ -4,6 +4,17 @@ PNG/画像メタデータビューア (PySide6版) — 更新履歴
 
 ---
 
+## [v2.34.1] 2026-11-21
+
+### 変更（スライドショー音楽と SS の連動）
+ユーザー指摘の3点を、🎵（スライドショー音楽）と▶SS の関係を「SS に連動」へ作り替えて解消した。
+- **🎵 を ON にしても勝手に音楽が始まらない**: 🎵 は「音楽スライドショーの Arm（武装）スイッチ」に変更。ON 時はプレイヤー準備とキュー作成のみ行い、実際に鳴らすのは ▶SS の開始時（`_start_ss` → `_start_audio_playback`）。SS 実行中に 🎵 を切り替えたときだけ即時に再生/停止する [png_viewer.py:5616-5663](file:///N:/マイドライブ/png_viwer/png_viewer.py#L5616-L5663)。
+- **スライドショーを止めると音楽も止まる**: `_toggle_ss` の停止分岐で `_stop_audio_playback()` を呼び、BGM/音声を SS と一緒に停止 [png_viewer.py:5991-5998](file:///N:/マイドライブ/png_viwer/png_viewer.py#L5991-L5998)。
+- **送り拍数を 1 にすれば速くなる（実行中でも即時反映）**: `_resync_ss()` を新設し、拍・BPM・波形同期・再生速度・フレーム数を再適用。環境設定 OK 後（`MainWindow._open_settings`）と 🔊 ポップアップで速度変更時（`_set_speed`）に、実行中の SS へ呼ぶ [png_viewer.py:6013-6035](file:///N:/マイドライブ/png_viwer/png_viewer.py#L6013-L6035) / [png_viewer.py:5698](file:///N:/マイドライブ/png_viwer/png_viewer.py#L5698)。波形同期は beat 数で送り時刻を組み直し現在位置から再スケジュール、BPM 同期は間隔を再計算。
+- 補助メソッド `_ss_running()` / `_scan_if_empty()` / `_start_audio_playback()` / `_stop_audio_playback()` を追加し、既存の `_play_bgm_current`・`_on_beat_detected` の SS 実行判定を `_ss_running()` に統一。
+
+---
+
 ## [v2.34] 2026-11-21
 
 ### 新機能

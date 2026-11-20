@@ -209,7 +209,7 @@ except ImportError:
 # ══════════════════════════════════════════════════════════════════════════════
 #  定数・設定
 # ══════════════════════════════════════════════════════════════════════════════
-APP_VERSION  = "v2.34"
+APP_VERSION  = "v2.34.1"
 APP_NAME     = "PNG Metadata Viewer"
 APP_AUTHOR   = "nemot"
 _APP_ICON_B64 = (
@@ -5592,7 +5592,7 @@ class FullViewer(QDialog):
         # 波形同期: 曲が変わったのでビート列を破棄し再検出。検出完了までは
         # 固定/BPM 間隔で送り続け、_on_beat_detected で実ビートへ昇格する。
         if self._wavesync_enabled():
-            ss_running = (self._ss_job is not None and self._ss_job.isActive()) or self._wavesync_active
+            ss_running = self._ss_running()
             self._beat_times = []
             self._beat_slide_times = []
             self._kick_beat_detect()
@@ -5613,53 +5613,69 @@ class FullViewer(QDialog):
         self._voice_player.setSource(QUrl.fromLocalFile(path))
         self._voice_player.play()
 
-    def _toggle_music(self):
-        if not HAS_MULTIMEDIA:
-            QMessageBox.warning(self, T("音楽"), T("PySide6.QtMultimedia が無いため音楽再生できません"))
-            return
-        if self._music_on:
-            self._stop_music()
-            self._music_btn.setText("🎵")
-            self._music_btn.setToolTip(T("スライドショー音楽 ON"))
-        else:
-            self._ensure_audio_players()
-            # キューが空ならフォルダを再スキャン（設定変更後に対応）
-            if not self._bgm_queue:
-                folder = (self._audio_cfg("ss_bgm_folder", "") or "").strip()
-                if folder and os.path.isdir(folder):
-                    self._bgm_queue = self._scan_audio_folder(folder)
-            if not self._voice_queue:
-                folder = (self._audio_cfg("ss_voice_folder", "") or "").strip()
-                if folder and os.path.isdir(folder):
-                    self._voice_queue = self._scan_audio_folder(folder)
-            bgm_on = bool(self._audio_cfg("ss_bgm_enabled", False))
-            voice_on = bool(self._audio_cfg("ss_voice_enabled", False))
-            if bgm_on and self._bgm_queue:
-                self._bgm_idx = 0
-                self._play_bgm_current(advance=False)
-            if voice_on and self._voice_queue:
-                self._voice_idx = 0
-                self._play_voice_current(advance=False)
-            if not (bgm_on and self._bgm_queue) and not (voice_on and self._voice_queue):
-                QMessageBox.information(
-                    self, T("音楽"),
-                    T("有効な系統に再生可能なファイルがありません。環境設定 > 🎵 音楽 を確認してください"))
-                return
-            self._music_on = True
-            self._music_btn.setText("🎵⏸")
-            self._music_btn.setToolTip(T("スライドショー音楽 OFF"))
+    def _ss_running(self) -> bool:
+        """スライドショーが実行中か（固定/BPM タイマー or 波形同期）。"""
+        return (self._ss_job is not None and self._ss_job.isActive()) or self._wavesync_active
 
-    def _stop_music(self):
-        self._music_on = False
+    def _scan_if_empty(self):
+        """キューが空なら設定フォルダを再スキャン（設定変更後に対応）。"""
+        if not self._bgm_queue:
+            folder = (self._audio_cfg("ss_bgm_folder", "") or "").strip()
+            if folder and os.path.isdir(folder):
+                self._bgm_queue = self._scan_audio_folder(folder)
+        if not self._voice_queue:
+            folder = (self._audio_cfg("ss_voice_folder", "") or "").strip()
+            if folder and os.path.isdir(folder):
+                self._voice_queue = self._scan_audio_folder(folder)
+
+    def _start_audio_playback(self):
+        """BGM/音声を再生開始（スライドショー開始・🎵 アーム中に呼ぶ）。"""
+        if not HAS_MULTIMEDIA:
+            return
+        self._ensure_audio_players()
+        self._scan_if_empty()
+        if bool(self._audio_cfg("ss_bgm_enabled", False)) and self._bgm_queue:
+            self._bgm_idx = 0
+            self._play_bgm_current(advance=False)
+        if bool(self._audio_cfg("ss_voice_enabled", False)) and self._voice_queue:
+            self._voice_idx = 0
+            self._play_voice_current(advance=False)
+
+    def _stop_audio_playback(self):
+        """再生中の BGM/音声を止める（スライドショー停止・🎵 OFF で呼ぶ）。"""
         if self._bgm_player is not None:
             self._bgm_player.stop()
         if self._voice_player is not None:
             self._voice_player.stop()
-        # 波形同期中の SS は音楽停止で位置基準を失うので固定間隔へ降格
-        if self._wavesync_active:
-            self._stop_beat_sync()
-            if self._ss_job is not None and self._ss_btn.text().startswith("⏸"):
-                self._ss_job.start(max(16, int(self._ss_spin.value() * 1000 / 60)))
+
+    def _toggle_music(self):
+        """🎵 = スライドショー音楽の Arm スイッチ (v2.34.1)。
+        ONにしても単独では鳴らさず、▶SS の開始で再生／⏸停止で止まる。
+        既に SS 実行中なら即時に再生開始／停止する。"""
+        if not HAS_MULTIMEDIA:
+            QMessageBox.warning(self, T("音楽"), T("PySide6.QtMultimedia が無いため音楽再生できません"))
+            return
+        if self._music_on:
+            self._music_on = False
+            self._stop_audio_playback()
+            self._music_btn.setText("🎵")
+            self._music_btn.setToolTip(T("スライドショー音楽 ON"))
+            if self._ss_running():          # 位置基準を失うので間隔を再計算
+                self._resync_ss()
+        else:
+            self._music_on = True
+            self._ensure_audio_players()
+            self._scan_if_empty()
+            self._music_btn.setText("🎵♪")
+            self._music_btn.setToolTip(T("スライドショー音楽 OFF"))
+            if self._ss_running():          # 実行中なら今すぐ再生して同期
+                self._start_audio_playback()
+                self._resync_ss()
+
+    def _stop_music(self):
+        """Arm を外して再生を止める（ビューア終了時）。"""
+        self._music_on = False
+        self._stop_audio_playback()
 
     def _set_volume(self, kind: str, value: int):
         """音量を 0-100 で設定。cfg 更新 + save_cfg + QAudioOutput 即時反映。
@@ -5694,6 +5710,12 @@ class FullViewer(QDialog):
         if player is not None:
             try:
                 player.setPlaybackRate(rate)
+            except Exception:
+                pass
+        # [v2.34.1] 再生速度は BPM 間隔にも効くので実行中の SS を再同期
+        if kind == "bgm":
+            try:
+                self._resync_ss()
             except Exception:
                 pass
         return rate
@@ -5917,7 +5939,7 @@ class FullViewer(QDialog):
             return  # 解析中に曲が変わった → 破棄
         self._beat_times = list(beats)
         # SS 実行中かつ波面同期希望なら固定間隔から実ビートへ切り替え
-        if self._wavesync_enabled() and self._ss_btn.text().startswith("⏸"):
+        if self._wavesync_enabled() and self._ss_running():
             self._start_beat_sync()
 
     def _on_beat_failed(self, path: str):
@@ -5983,10 +6005,11 @@ class FullViewer(QDialog):
             self._beat_sync_timer.stop()
 
     def _toggle_ss(self):
-        if (self._ss_job and self._ss_job.isActive()) or self._wavesync_active:
+        if self._ss_running():
             if self._ss_job is not None:
                 self._ss_job.stop()
             self._stop_beat_sync()
+            self._stop_audio_playback()   # [v2.34.1] 音楽もスライドショーに連動して停止
             self._ss_btn.setText("▶ SS")
         else:
             self._start_ss()
@@ -5995,6 +6018,9 @@ class FullViewer(QDialog):
         if self._ss_job is None:
             self._ss_job = QTimer(self)
             self._ss_job.timeout.connect(self._next)
+        # [v2.34.1] 音楽はスライドショー開始に連動して鳴らす（🎵 が Arm 済みなら）
+        if self._music_on:
+            self._start_audio_playback()
         # 波形同期 (v2.33) が最優先。実ビート列があればそれで送る。
         if self._wavesync_enabled() and self._music_on:
             if self._start_beat_sync():
@@ -6009,6 +6035,27 @@ class FullViewer(QDialog):
             interval = max(16, int(self._ss_spin.value() * 1000 / 60))
         self._ss_job.start(interval)
         self._ss_btn.setText("⏸ SS")
+
+    def _resync_ss(self):
+        """実行中のスライドショーに現在の拍/BPM/波形同期/再生速度/フレーム数を即時反映。"""
+        if not self._ss_running():
+            return
+        if self._wavesync_enabled() and self._music_on and self._beat_times:
+            self._recompute_slide_times()
+            if self._beat_slide_times:
+                if self._ss_job is not None:
+                    self._ss_job.stop()
+                self._wavesync_active = True
+                self._schedule_next_beat_slide()
+                return
+        # 固定 / BPM 間隔へ
+        self._stop_beat_sync()
+        if self._ss_job is None:
+            self._ss_job = QTimer(self)
+            self._ss_job.timeout.connect(self._next)
+        beat_ms = self._beat_interval_ms()
+        interval = beat_ms if beat_ms is not None else max(16, int(self._ss_spin.value() * 1000 / 60))
+        self._ss_job.start(interval)
 
     # ── キーボード ────────────────────────────────────────────────────────
     # ズーム中に矢印キーでパンする量 (px)
@@ -12506,6 +12553,13 @@ class MainWindow(QMainWindow):
                 set_ui_language(new_lang)
                 QMessageBox.information(self, T("表示言語"), T("アプリを再起動すると新しい言語で表示されます"))
             save_cfg(self._cfg)
+            # [v2.34.1] 設定変更を実行中のスライドショーへ即時反映
+            fv = getattr(self, "_full_viewer", None)
+            if fv is not None and fv.isVisible():
+                try:
+                    fv._resync_ss()
+                except Exception:
+                    pass
             if hasattr(self, "_ext_btn"):
                 self._ext_btn.setText(self._ext_indicator_text())
             self._set_status(T("環境設定を保存しました"))
