@@ -4,6 +4,61 @@ PNG/画像メタデータビューア (PySide6版) — 更新履歴
 
 ---
 
+## [v2.29] 2026-11-21
+
+### 追加機能: スライドショー音楽再生（Phase 1）
+ユーザー指定「スライドショーに音楽再生機能をつける。設定に音楽再生用のフォルダ選択できるようにする。2つ選択できるようにして音楽を2つ同時に流せるようにする。同時、片方のみの再生、設定でそれぞれの再生スピードを変更できるようにしたい」に対応。Phase 1 では **BPM 手動入力 + 拍同期** までを実装（自動 BPM 検出は Phase 2）。
+
+#### 設計
+- **2系統の役割分担**:
+  - **BGM系統**: 拍同期の基準。フォルダ内の音楽をランダム順でループ再生。
+  - **音声・セリフ系統**: 拍同期なし、独立再生。効果音・ナレーション用。
+- **追加依存なし**: `PySide6.QtMultimedia`（PySide6 同梱）の `QMediaPlayer` + `QAudioOutput` を 2 系統分使用。
+- **HAS_MULTIMEDIA フォールバック**: QtMultimedia が import できない環境では音楽機能を無効化し、ビューア本体は動く。設定タブ・ツールバーの 🎵 ボタンはグレーアウト＋警告表示。
+
+#### 実装
+- **import 部** [png_viewer.py:190-198](file:///N:/マイドライブ/png_viwer/png_viewer.py#L190-L198): `PySide6.QtMultimedia` を try/except で import、`HAS_MULTIMEDIA` フラグ設定。
+- **SettingsDialog タブ6「🎵 音楽」** [png_viewer.py:6170-6240](file:///N:/マイドライブ/png_viwer/png_viewer.py#L6170-L6240):
+  - BGMグループ: フォルダ選択 / ON-OFF / 音量スライダー (0-100) / 再生速度スピン (0.50-2.00) / BPM スピン (0-300, 0=無効) / 拍数コンボ (1/2/4/8)。
+  - 音声グループ: フォルダ選択 / ON-OFF / 音量 / 再生速度。
+  - `HAS_MULTIMEDIA=False` 時は警告のみ表示。
+  - `_browse_ss_bgm` / `_browse_ss_voice` でフォルダ選択ダイアログ。
+  - `_save()` で cfg に `ss_bgm_folder / ss_bgm_enabled / ss_bgm_volume / ss_bgm_speed / ss_bgm_bpm / ss_bgm_beat / ss_voice_folder / ss_voice_enabled / ss_voice_volume / ss_voice_speed` を保存。
+- **FullViewer 音楽エンジン** [png_viewer.py:5264-5410](file:///N:/マイドライブ/png_viwer/png_viewer.py#L5264-L5410):
+  - `_init_audio_state()` — cfg からフォルダをスキャンしてランダムキュー構築。
+  - `_scan_audio_folder()` — `.mp3/.wav/.flac/.ogg/.m4a/.aac/.opus` を列挙、`random.shuffle`。
+  - `_ensure_audio_players()` — 初回 ON 時に QMediaPlayer ×2 + QAudioOutput ×2 を遅延作成、音量・速度適用。
+  - `_on_bgm_status` / `_on_voice_status` — `EndOfMedia` で次曲へ自動送り（キュー末尾から先頭へループ）。
+  - `_toggle_music()` — 🎵 ボタンハンドラ。設定変更後にキュー再スキャン。有効な系統にファイルが無い場合は警告。
+  - `_stop_music()` — 両系統停止。
+  - `_beat_interval_ms()` — 拍同期間隔計算: `(60000 / BPM) × 拍数 / 再生速度` ms。BGM OFF / BPM=0 / 音楽 OFF なら None 返し、呼び出し側が固定間隔にフォールバック。
+- **ツールバー 🎵 ボタン** [png_viewer.py:4725-4729](file:///N:/マイドライブ/png_viwer/png_viewer.py#L4725-L4729): SS ボタンの隣に配置。`HAS_MULTIMEDIA=False` 時は `setEnabled(False)`。
+- **拍同期と既存のフレーム数スピン併存** [png_viewer.py:5414-5424](file:///N:/マイドライブ/png_viwer/png_viewer.py#L5414-L5424): `_start_ss` で `_beat_interval_ms()` が非 None なら拍モード、None ならフレーム数固定間隔にフォールバック。
+- **closeEvent で音楽停止** [png_viewer.py:5187-5191](file:///N:/マイドライブ/png_viwer/png_viewer.py#L5187-L5191): ビュア閉じ時に両系統を確実に停止。
+- **i18n**: 21 キー追加、テーブル 585 → **606 キー**。en/zh/ko 翻訳込み。
+- `APP_VERSION` を `v2.28` → `v2.29` へバンプ。
+
+### 換算早見（拍同期、BGM 再生速度 1.0 倍時）
+| BPM | 1拍 | 2拍 | 4拍 | 8拍 |
+|---|---|---|---|---|
+| 60 | 1000ms | 2000ms | 4000ms | 8000ms |
+| 90 | 667ms | 1333ms | 2667ms | 5333ms |
+| 120 | 500ms | 1000ms | 2000ms | 4000ms |
+| 128 | 469ms | 938ms | 1875ms | 3750ms |
+| 140 | 429ms | 857ms | 1714ms | 3429ms |
+
+### Phase 2（次回予定）
+- **BPM 自動検出**: numpy + soundfile で onsets + autocorrelation、検出値を「推奨 BPM」として UI 表示、手動で上書き可能。解析結果キャッシュ。
+
+### 検証
+- `python -m py_compile` OK。`ast` で `_I18N_TABLE` 606 キー・新規 21 キーの存在を確認。
+- offscreen で `SettingsDialog` 構築 → 7 タブ、音楽タブ index 6、BPM 140 / 拍数 4 が `_save()` で cfg に反映されることを確認。
+- offscreen で `FullViewer._init_audio_state` → 一時フォルダの .mp3 3件 / .wav 2件 / .txt 1件をスキャンし、.txt を除外して BGM=3 / 音声=2 のキューを構築。
+- `_beat_interval_ms()` の換算を境界値で検証: 120bpm×4拍=2000ms / rate=0.5 で 4000ms / bpm=0 で None（固定間隔フォールバック）。
+- `HAS_MULTIMEDIA=False` 経路は import 部 try/except でカバー、設定タブとツールバーの無効化ロジックで UX 担保。
+
+---
+
 ## [v2.28] 2026-11-21
 
 ### 機能変更

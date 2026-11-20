@@ -188,10 +188,20 @@ except ImportError:
     print(T("Pillow が見つかりません。pip install Pillow を実行してください。"))
     sys.exit(1)
 
+# スライドショー音楽再生用 (v2.29)。PySide6 の Multimedia が入っていない環境では
+# 音楽機能を無効化して画像ビューア本体は動かす。
+try:
+    from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
+    HAS_MULTIMEDIA = True
+except ImportError:
+    QMediaPlayer = None
+    QAudioOutput = None
+    HAS_MULTIMEDIA = False
+
 # ══════════════════════════════════════════════════════════════════════════════
 #  定数・設定
 # ══════════════════════════════════════════════════════════════════════════════
-APP_VERSION  = "v2.28"
+APP_VERSION  = "v2.29"
 APP_NAME     = "PNG Metadata Viewer"
 APP_AUTHOR   = "nemot"
 _APP_ICON_B64 = (
@@ -260,26 +270,10 @@ def Te(s):
 # キーは画面に表示される文字列そのもの。改行などを含む。未登録の文字列は
 # 日本語のまま表示される。
 _I18N_TABLE = {
-    '\n\nお気に入りから削除しますか？': {"en": '\n\nRemove from favorites?', "zh": '\n\n要从收藏中删除吗？', "ko": '\n\n즐겨찾기에서 삭제하시겠습니까?'},
-    '\n\nこのファイルを ': {"en": '\n\nThis file ', "zh": '\n\n此文件', "ko": '\n\n이 파일을 '},
-    '\n\n保存先を変える場合は settings.json に絶対パスの `thumb_cache_dir` を指定します。移行時は先に丸ごとコピーし、全件サイズ一致を確認してから元を削除してください（コピー先に `.fmt_version` が無いと起動時の自動消去で全キャッシュが消えます）。': {"en": '\n\nTo change the location, set an absolute path `thumb_cache_dir` in settings.json. When migrating, copy everything first, verify that all file sizes match, then delete the original (without `.fmt_version` in the destination, the automatic cleanup at startup will delete the entire cache).', "zh": '\n\n如需更改保存位置，请在 settings.json 中指定绝对路径 `thumb_cache_dir`。迁移时请先完整复制，确认所有文件大小一致后再删除原文件（如果目标位置没有 `.fmt_version`，启动时的自动清理会删除全部缓存）。', "ko": '\n\n저장 위치를 변경하려면 settings.json 에 절대 경로 `thumb_cache_dir` 를 지정하세요. 마이그레이션 시에는 먼저 전체를 복사하고 모든 파일 크기가 일치하는지 확인한 뒤 원본을 삭제하세요 (대상에 `.fmt_version` 이 없으면 시작 시 자동 정리로 전체 캐시가 삭제됩니다).'},
-    '\n\n既存のロゴ画像を新しい保存先へ移動しますか？': {"en": '\n\nMove existing logo images to the new location?', "zh": '\n\n是否将现有 Logo 图片移动到新的保存位置？', "ko": '\n\n기존 로고 이미지를 새 저장 위치로 이동하시겠습니까?'},
-    '\n  … 他 ': {"en": '\n  … and ', "zh": '\n  … 等 ', "ko": '\n  … 외 '},
-    '\n...他': {"en": '\n...more', "zh": '\n...等', "ko": '\n...외'},
-    '\n[パラメータ解析エラー: ': {"en": '\n[Parameter parse error: ', "zh": '\n[参数解析错误：', "ko": '\n[파라미터 해석 오류: '},
-    '\n※ 保存先を変更しても、ここに表示されている場所が現在の保存先です。': {"en": '\n※ Even if the location is changed, the path shown here is the current save location.', "zh": '\n\n※ 即使更改了保存位置，这里显示的仍然是当前保存位置。', "ko": '\n\n※ 저장 위치를 변경해도 여기에 표시된 경로가 현재 저장 위치입니다.'},
-    '\n← 前の画像  |  Esc/Enter で閉じる': {"en": '\n← Previous image  |  Esc/Enter to close', "zh": '\n← 上一张图片  |  按 Esc/Enter 关闭', "ko": '\n← 이전 이미지  |  Esc/Enter 로 닫기'},
-    '\nうち旧形式 .pkl が ': {"en": '\nof which legacy .pkl format ', "zh": '\n其中旧格式 .pkl ', "ko": '\n그중 구형식 .pkl 이 '},
-    '\nこのファイルを ': {"en": '\nThis file ', "zh": '\n此文件', "ko": '\n이 파일을 '},
-    '\nキーボードショートカット\n\n[ファイル操作]\nCtrl+O          フォルダを開く\nF5              更新（再読み込み）\nF2              名前の変更\nDelete          ゴミ箱に移動（複数選択対応）\nShift+Delete    完全削除（ゴミ箱を使わない）\nCtrl+C          コピー（ファイルとして）\nCtrl+X          切り取り\nCtrl+V          貼り付け\nCtrl+Shift+N    新しいフォルダを作成\n\n[ブックマーク]\nCtrl+B          ブックマーク一覧を表示\nCtrl+Shift+B    現在のフォルダをブックマークに追加\n\n[選択]\nCtrl+A          すべて選択\nCtrl+D          選択解除\nCtrl+クリック   個別追加/解除\nShift+クリック  範囲選択\nShift+矢印      選択範囲を拡張\nドラッグ        矩形ドラッグで範囲選択\nEscape          複数選択を解除して単一選択に戻す\n\n[グリッド操作]\n←↑↓→          カーソル移動\nPageUp/Down     ページ単位で移動\nHome / End      先頭 / 末尾に移動\nEnter           全画面表示\nCtrl+ホイール   サムネサイズ変更\n\n[フォルダ移動]\nCtrl+Left/Right 前後のフォルダ\nAlt+Left/Right  前後のフォルダ\nAlt+Up          親フォルダへ移動\n\n[表示・情報]\nAlt+Enter       プロパティ\nF1              このヘルプ\nCtrl+,          環境設定\n\n[起動時]\n前回開いていたフォルダを自動復元します。\n\n[右パネル]\nプレビューと情報エリアの境界をドラッグしてリサイズ可能\n\n[FullViewer]\n←→↑↓ PgUp/Dn  前後の画像\nSpace / F11     没入モード ON/OFF\nR               回転    +/-  ズーム\n0               等倍    S    スライドショー\nEsc/Enter       閉じる  Delete  削除\n': {"en": '\nKeyboard shortcuts\n\n[File operations]\nCtrl+O          Open folder\nF5              Refresh (reload)\nF2              Rename\nDelete          Move to Recycle Bin (multi-select)\nShift+Delete    Delete permanently (bypass Recycle Bin)\nCtrl+C          Copy (as files)\nCtrl+X          Cut\nCtrl+V          Paste\nCtrl+Shift+N    New folder\n\n[Bookmarks]\nCtrl+B          Show bookmark list\nCtrl+Shift+B    Add current folder to bookmarks\n\n[Selection]\nCtrl+A          Select all\nCtrl+D          Deselect\nCtrl+Click      Toggle individual selection\nShift+Click     Range selection\nShift+Arrow     Extend selection range\nDrag            Rectangle drag selection\nEscape          Clear multi-selection, back to single selection\n\n[Grid]\n←↑↓→          Move cursor\nPageUp/Down     Move page by page\nHome / End      Move to start / end\nEnter           Fullscreen view\nCtrl+Wheel      Change thumbnail size\n\n[Folder navigation]\nCtrl+Left/Right Previous / next folder\nAlt+Left/Right  Previous / next folder\nAlt+Up          Go up to parent folder\n\n[View / info]\nAlt+Enter       Properties\nF1              This help\nCtrl+,          Settings\n\n[On startup]\nAutomatically restores the folder that was open last time.\n\n[Right panel]\nDrag the boundary between the preview and info areas to resize\n\n[FullViewer]\n←→↑↓ PgUp/Dn  Previous / next image\nSpace / F11     Immersive mode ON/OFF\nR               Rotate    +/-  Zoom\n0               Actual size    S    Slideshow\nEsc/Enter       Close    Delete  Delete\n', "zh": '\n键盘快捷键\n\n[文件操作]\nCtrl+O          打开文件夹\nF5              刷新（重新加载）\nF2              重命名\nDelete          移动到回收站（支持多选）\nShift+Delete    彻底删除（不使用回收站）\nCtrl+C          复制（作为文件）\nCtrl+X          剪切\nCtrl+V          粘贴\nCtrl+Shift+N    新建文件夹\n\n[书签]\nCtrl+B          显示书签列表\nCtrl+Shift+B    将当前文件夹添加到书签\n\n[选择]\nCtrl+A          全选\nCtrl+D          取消选择\nCtrl+点击       单个添加/取消\nShift+点击      范围选择\nShift+方向键    扩展选择范围\n拖动            矩形框选\nEscape          取消多选，恢复单选\n\n[网格操作]\n←↑↓→          移动光标\nPageUp/Down     按页移动\nHome / End      移动到开头 / 末尾\nEnter           全屏显示\nCtrl+滚轮       缩略图大小\n\n[文件夹移动]\nCtrl+Left/Right 上一/下一文件夹\nAlt+Left/Right  上一/下一文件夹\nAlt+Up          返回上级文件夹\n\n[显示/信息]\nAlt+Enter       属性\nF1              此帮助\nCtrl+,          设置\n\n[启动时]\n自动恢复上次打开的文件夹。\n\n[右面板]\n拖动预览和信息区域之间的边界可调整大小\n\n[FullViewer]\n←→↑↓ PgUp/Dn  上一张/下一张图片\nSpace / F11     沉浸模式 ON/OFF\nR               旋转    +/-  缩放\n0               实际大小    S    幻灯片\nEsc/Enter       关闭    Delete  删除\n', "ko": '\n키보드 단축키\n\n[파일 작업]\nCtrl+O          폴더 열기\nF5              새로고침 (다시 불러오기)\nF2              이름 변경\nDelete          휴지통으로 이동 (다중 선택 지원)\nShift+Delete    완전 삭제 (휴지통 사용 안 함)\nCtrl+C          복사 (파일로)\nCtrl+X          잘라내기\nCtrl+V          붙여넣기\nCtrl+Shift+N    새 폴더 만들기\n\n[북마크]\nCtrl+B          북마크 목록 표시\nCtrl+Shift+B    현재 폴더를 북마크에 추가\n\n[선택]\nCtrl+A          전체 선택\nCtrl+D          선택 해제\nCtrl+클릭       개별 추가/해제\nShift+클릭      범위 선택\nShift+화살표    선택 범위 확장\n드래그          사각형 드래그로 범위 선택\nEscape          다중 선택 해제 후 단일 선택으로\n\n[그리드 조작]\n←↑↓→          커서 이동\nPageUp/Down     페이지 단위로 이동\nHome / End      처음 / 끝으로 이동\nEnter           전체 화면 표시\nCtrl+휠         썸네일 크기 변경\n\n[폴더 이동]\nCtrl+Left/Right 이전/다음 폴더\nAlt+Left/Right  이전/다음 폴더\nAlt+Up          상위 폴더로 이동\n\n[표시/정보]\nAlt+Enter       속성\nF1              이 도움말\nCtrl+,          환경 설정\n\n[시작 시]\n지난 번에 열었던 폴더를 자동으로 복원합니다.\n\n[오른쪽 패널]\n미리보기와 정보 영역 경계를 드래그하여 크기 조절\n\n[FullViewer]\n←→↑↓ PgUp/Dn  이전/다음 이미지\nSpace / F11     몰입 모드 ON/OFF\nR               회전    +/-  확대/축소\n0               실제 크기    S    슬라이드쇼\nEsc/Enter       닫기    Delete  삭제\n'},
-    '\nサイズ: ': {"en": '\nSize: ', "zh": '\n大小：', "ko": '\n크기: '},
-    '\n保持する上限を MB で指定してください（古いものから削除されます）。': {"en": '\nEnter the limit to keep in MB (oldest files will be deleted first).', "zh": '\n请以 MB 指定要保留的上限（将从最旧的开始删除）。', "ko": '\n유지할 상한을 MB 단위로 지정하세요 (오래된 것부터 삭제됩니다).'},
-    '\n場所: ': {"en": '\nLocation: ', "zh": '\n位置：', "ko": '\n위치: '},
-    '\n変更先: ': {"en": '\nChange to: ', "zh": '\n更改为：', "ko": '\n변경 대상: '},
-    '\n旧形式 .pkl: ': {"en": '\nLegacy .pkl: ', "zh": '\n旧格式 .pkl：', "ko": '\n구형식 .pkl: '},
-    '\n更新日時: ': {"en": '\nModified: ', "zh": '\n更新时间：', "ko": '\n수정 일시: '},
     '  |  使用: ': {"en": '  |  Used: ', "zh": '  |  使用：', "ko": '  |  사용: '},
     '  |  最終: ': {"en": '  |  Last: ', "zh": '  |  最后：', "ko": '  |  최종: '},
+    '  |  選択中グループ: ': {"en": '  |  Selected group: ', "zh": '  |  所选分组：', "ko": '  |  선택 그룹: '},
+    '  |  類似: ': {"en": '  |  Similar: ', "zh": '  |  相似：', "ko": '  |  유사: '},
     '  ←→ナビ  Space=全画面': {"en": '  ←→ navigate  Space=fullscreen', "zh": '  ←→ 切换  Space=全屏', "ko": '  ←→ 탐색  Space=전체화면'},
     '  中:': {"en": '  Medium:', "zh": '  中：', "ko": '  중:'},
     '  低:': {"en": '  Low:', "zh": '  低：', "ko": '  하:'},
@@ -289,15 +283,20 @@ _I18N_TABLE = {
     ' に移動しますか？\n\n': {"en": ' Move to?\n\n', "zh": ' 是否移动？\n\n', "ko": ' 로 이동하시겠습니까?\n\n'},
     ' の保存に失敗: ': {"en": ' failed to save: ', "zh": ' 保存失败：', "ko": ' 저장 실패: '},
     ' を ': {"en": ' ', "zh": ' ', "ko": '을(를) '},
+    ' バイト)\n': {"en": ' bytes)\n', "zh": ' 字节）\n', "ko": ' 바이트)\n'},
     ' バイト)\n画像サイズ: ': {"en": ' bytes)\nImage size: ', "zh": ' 字节）\n图片尺寸：', "ko": ' 바이트)\n이미지 크기: '},
     ' ファイル': {"en": ' files', "zh": ' 个文件', "ko": ' 개 파일'},
+    ' ファイルを完全に削除します。\n': {"en": ' Delete permanently.\n', "zh": ' 彻底删除该文件。\n', "ko": ' 파일을 완전히 삭제합니다.\n'},
     ' ファイルを完全に削除します。\nこの操作は取り消せません。\n\n': {"en": ' Delete permanently.\nThis cannot be undone.\n\n', "zh": ' 彻底删除该文件。\n此操作无法撤销。\n\n', "ko": ' 파일을 완전히 삭제합니다.\n이 작업은 취소할 수 없습니다.\n\n'},
+    ' 件のサムネイルをバックグラウンドで生成しますか？\n': {"en": ' Generate thumbnails in the background?\n', "zh": ' 个缩略图？\n', "ko": ' 개의 썸네일을 백그라운드에서 생성할까요?\n'},
     ' 件のサムネイルをバックグラウンドで生成しますか？\n※数万枚ある場合はディスクI/Oにより一時的に動作が重くなる場合があります。': {"en": ' thumbnails in the background?\n※ With tens of thousands of images, disk I/O may temporarily make the app sluggish.', "zh": ' 个缩略图？\n※ 如果有几万张图片，磁盘 I/O 可能会暂时使应用变慢。', "ko": ' 개의 썸네일을 백그라운드에서 생성할까요?\n※ 수만 장인 경우 디스크 I/O 때문에 일시적으로 동작이 느려질 수 있습니다.'},
     ' 件選択': {"en": ' selected', "zh": ' 个已选', "ko": ' 개 선택'},
     ' 枚': {"en": ' images', "zh": ' 张', "ko": ' 장'},
     '"完全一致" / -除外語 は正規表現モード以外で有効': {"en": '"exact phrase" / -exclude terms are effective outside regex mode', "zh": '"完全一致" / -排除词 仅在非正则模式下有效', "ko": '"완전 일치" / -제외어는 정규식 모드 이외에서 유효합니다'},
     '%)  |  作成日: ': {"en": '%)  |  Created: ', "zh": '%)  |  创建日期：', "ko": '%)  |  생성일: '},
+    '(未使用 ': {"en": 'unused ', "zh": ' 未使用 ', "ko": ' 미사용 '},
     '</b><br><br>PySide6 版 — tkinter 版 v11 を完全書き直し<br><br>依存: PySide6, Pillow': {"en": '</b><br><br>PySide6 version — complete rewrite of the tkinter version v11<br><br>Dependencies: PySide6, Pillow', "zh": '</b><br><br>PySide6 版 — 完全重写了 tkinter 版 v11<br><br>依赖：PySide6, Pillow', "ko": '</b><br><br>PySide6 버전 — tkinter 버전 v11을 완전히 재작성<br><br>의존성: PySide6, Pillow'},
+    '<br>依存: PySide6, Pillow': {"en": '<br>Dependencies: PySide6, Pillow', "zh": '<br>依赖：PySide6, Pillow', "ko": '<br>의존성: PySide6, Pillow'},
     'AI判定 ': {"en": 'AI assessment ', "zh": 'AI 判定 ', "ko": 'AI 판정 '},
     'AI品質判定する画像がありません': {"en": 'No images to assess for AI quality', "zh": '没有需要 AI 品质判定的图片', "ko": 'AI 품질 판정할 이미지가 없습니다'},
     'AI品質判定はすでに実行中です': {"en": 'AI quality assessment is already running', "zh": 'AI 品质判定已在运行中', "ko": 'AI 품질 판정이 이미 실행 중입니다'},
@@ -312,6 +311,10 @@ _I18N_TABLE = {
     'AI評価キャッシュを再読込しました': {"en": 'Reloaded AI rating cache', "zh": '已重新加载 AI 评价缓存', "ko": 'AI 평가 캐시를 다시 불러왔습니다'},
     'AI評価表示: ': {"en": 'AI rating display: ', "zh": 'AI 评价显示：', "ko": 'AI 평가 표시: '},
     'AI速度: ': {"en": 'AI speed: ', "zh": 'AI 速度：', "ko": 'AI 속도: '},
+    'BGMフォルダ:': {"en": "BGM folder:", "zh": "BGM 文件夹：", "ko": "BGM 폴더:"},
+    'BGMフォルダを選択': {"en": "Select BGM folder", "zh": "选择 BGM 文件夹", "ko": "BGM 폴더 선택"},
+    'BGM（拍同期の基準）': {"en": "BGM (beat-sync source)", "zh": "BGM（节拍同步基准）", "ko": "BGM (박자 동기화 기준)"},
+    'BPM (0=無効)': {"en": "BPM (0=disabled)", "zh": "BPM（0=禁用）", "ko": "BPM (0=비활성)"},
     'CFG scale の範囲。値が不明な画像は除外されます': {"en": 'CFG scale range. Images with unknown values are excluded.', "zh": 'CFG scale 范围。值未知的图片将被排除。', "ko": 'CFG scale 범위. 알 수 없는 값의 이미지는 제외됩니다'},
     'CSVを出力しました:\n': {"en": 'CSV exported:\n', "zh": '已导出 CSV：\n', "ko": 'CSV 출력 완료:\n'},
     'CSV出力': {"en": 'CSV export', "zh": 'CSV 导出', "ko": 'CSV 출력'},
@@ -330,27 +333,56 @@ _I18N_TABLE = {
     'LoRA名': {"en": 'LoRA name', "zh": 'LoRA 名称', "ko": 'LoRA 이름'},
     'LoRA名で検索...': {"en": 'Search by LoRA name...', "zh": '按 LoRA 名称搜索...', "ko": 'LoRA 이름으로 검색...'},
     'LoRA名をクリップボードにコピー': {"en": 'Copy LoRA name to clipboard', "zh": '将 LoRA 名称复制到剪贴板', "ko": 'LoRA 이름을 클립보드에 복사'},
+    'MB を削除しました。\n': {"en": ' MB deleted.\n', "zh": ' MB 已删除。\n', "ko": ' MB 삭제됨.\n'},
     'MB を削除しました。\n残り ': {"en": ' MB deleted.\nRemaining ', "zh": ' MB 已删除。\n剩余 ', "ko": ' MB 삭제됨.\n남은 '},
+    'MB を削除します。続行しますか？\n': {"en": ' MB will be deleted. Continue?\n', "zh": ' MB 将被删除。是否继续？\n', "ko": ' MB 를 삭제합니다. 계속하시겠습니까?\n'},
     'MB を削除します。続行しますか？\n対応するサムネイルは次回表示時に再生成されます（画像本体は消えません）。\n旧形式 .pkl は再生成されず、そのまま不要になります。': {"en": ' MB will be deleted. Continue?\nRelated thumbnails will be regenerated next time they are displayed (the original images will not be deleted).\nLegacy .pkl will not be regenerated and will simply become obsolete.', "zh": ' MB 将被删除。是否继续？\n对应缩略图下次显示时将重新生成（原图不会被删除）。\n旧格式 .pkl 不会重新生成，也不再需要。', "ko": ' MB 를 삭제합니다. 계속하시겠습니까?\n해당 썸네일은 다음 표시 시 다시 생성됩니다 (이미지 원본은 삭제되지 않습니다).\n구형식 .pkl 은 재생성되지 않으며 그대로 불필요해집니다.'},
     'MB 以下なので削除不要です。': {"en": ' MB or less, nothing to delete.', "zh": ' MB 以下，无需删除。', "ko": ' MB 이하이므로 삭제할 필요가 없습니다.'},
     'MB（現行コードは読まない残骸）': {"en": ' MB (remnants not read by current code)', "zh": ' MB（当前代码不读取的残留）', "ko": ' MB (현재 코드가 읽지 않는 잔여물)'},
     'MB（現行コードは読みません）': {"en": ' MB (not read by current code)', "zh": ' MB（当前代码不读取）', "ko": ' MB (현재 코드가 읽지 않음)'},
     'PNGではありません': {"en": 'Not a PNG', "zh": '不是 PNG', "ko": 'PNG가 아닙니다'},
     'Pillow が見つかりません。pip install Pillow を実行してください。': {"en": 'Pillow not found. Run: pip install Pillow', "zh": '未找到 Pillow。请执行 pip install Pillow', "ko": 'Pillow를 찾을 수 없습니다. pip install Pillow 를 실행하세요.'},
+    'PySide6 版 — tkinter 版 v11 を完全書き直し<br>': {"en": 'PySide6 version — complete rewrite of the tkinter version v11<br>', "zh": 'PySide6 版 — 完全重写了 tkinter 版 v11<br>', "ko": 'PySide6 버전 — tkinter 버전 v11을 완전히 재작성<br>'},
+    'PySide6.QtMultimedia が無いため音楽再生できません': {"en": "Cannot play music (PySide6.QtMultimedia not available)", "zh": "无法播放音乐（缺少 PySide6.QtMultimedia）", "ko": "PySide6.QtMultimedia 이 없어 음악 재생 불가"},
+    'PySide6.QtMultimedia が無効': {"en": "PySide6.QtMultimedia unavailable", "zh": "PySide6.QtMultimedia 不可用", "ko": "PySide6.QtMultimedia 사용 불가"},
     'Sampler 名の部分一致（大文字小文字無視）': {"en": 'Sampler name partial match (case-insensitive)', "zh": '采样器名称部分匹配（忽略大小写）', "ko": 'Sampler 이름 부분 일치 (대소문자 무시)'},
     'Seed の部分一致': {"en": 'Seed partial match', "zh": '种子部分匹配', "ko": 'Seed 부분 일치'},
     '[ファイル情報取得エラー: ': {"en": '[File info error: ', "zh": '[获取文件信息错误：', "ko": '[파일 정보 가져오기 오류: '},
     '[メタ取得エラー: ': {"en": '[Metadata fetch error: ', "zh": '[获取元数据错误：', "ko": '[메타 가져오기 오류: '},
     '[年月]': {"en": '[year/month]', "zh": '[年月]', "ko": '[년월]'},
     '\\s*[日]': {"en": '\\s*[日]', "zh": '\\s*[日]', "ko": '\\s*[日]'},
+    '\n  … 他 ': {"en": '\n  … and ', "zh": '\n  … 等 ', "ko": '\n  … 외 '},
+    '\n...他': {"en": '\n...more', "zh": '\n...等', "ko": '\n...외'},
+    '\n[パラメータ解析エラー: ': {"en": '\n[Parameter parse error: ', "zh": '\n[参数解析错误：', "ko": '\n[파라미터 해석 오류: '},
+    '\n\nお気に入りから削除しますか？': {"en": '\n\nRemove from favorites?', "zh": '\n\n要从收藏中删除吗？', "ko": '\n\n즐겨찾기에서 삭제하시겠습니까?'},
+    '\n\nこのファイルを ': {"en": '\n\nThis file ', "zh": '\n\n此文件', "ko": '\n\n이 파일을 '},
+    '\n\n保存先を変える場合は settings.json に絶対パスの `thumb_cache_dir` を指定します。移行時は先に丸ごとコピーし、全件サイズ一致を確認してから元を削除してください（コピー先に `.fmt_version` が無いと起動時の自動消去で全キャッシュが消えます）。': {"en": '\n\nTo change the location, set an absolute path `thumb_cache_dir` in settings.json. When migrating, copy everything first, verify that all file sizes match, then delete the original (without `.fmt_version` in the destination, the automatic cleanup at startup will delete the entire cache).', "zh": '\n\n如需更改保存位置，请在 settings.json 中指定绝对路径 `thumb_cache_dir`。迁移时请先完整复制，确认所有文件大小一致后再删除原文件（如果目标位置没有 `.fmt_version`，启动时的自动清理会删除全部缓存）。', "ko": '\n\n저장 위치를 변경하려면 settings.json 에 절대 경로 `thumb_cache_dir` 를 지정하세요. 마이그레이션 시에는 먼저 전체를 복사하고 모든 파일 크기가 일치하는지 확인한 뒤 원본을 삭제하세요 (대상에 `.fmt_version` 이 없으면 시작 시 자동 정리로 전체 캐시가 삭제됩니다).'},
+    '\n\n既存のロゴ画像を新しい保存先へ移動しますか？': {"en": '\n\nMove existing logo images to the new location?', "zh": '\n\n是否将现有 Logo 图片移动到新的保存位置？', "ko": '\n\n기존 로고 이미지를 새 저장 위치로 이동하시겠습니까?'},
+    '\n※ 保存先を変更しても、ここに表示されている場所が現在の保存先です。': {"en": '\n※ Even if the location is changed, the path shown here is the current save location.', "zh": '\n\n※ 即使更改了保存位置，这里显示的仍然是当前保存位置。', "ko": '\n\n※ 저장 위치를 변경해도 여기에 표시된 경로가 현재 저장 위치입니다.'},
+    '\n← 前の画像  |  Esc/Enter で閉じる': {"en": '\n← Previous image  |  Esc/Enter to close', "zh": '\n← 上一张图片  |  按 Esc/Enter 关闭', "ko": '\n← 이전 이미지  |  Esc/Enter 로 닫기'},
+    '\nうち旧形式 .pkl が ': {"en": '\nof which legacy .pkl format ', "zh": '\n其中旧格式 .pkl ', "ko": '\n그중 구형식 .pkl 이 '},
+    '\nこのファイルを ': {"en": '\nThis file ', "zh": '\n此文件', "ko": '\n이 파일을 '},
+    '\nキーボードショートカット\n\n[ファイル操作]\nCtrl+O          フォルダを開く\nF5              更新（再読み込み）\nF2              名前の変更\nDelete          ゴミ箱に移動（複数選択対応）\nShift+Delete    完全削除（ゴミ箱を使わない）\nCtrl+C          コピー（ファイルとして）\nCtrl+X          切り取り\nCtrl+V          貼り付け\nCtrl+Shift+N    新しいフォルダを作成\n\n[ブックマーク]\nCtrl+B          ブックマーク一覧を表示\nCtrl+Shift+B    現在のフォルダをブックマークに追加\n\n[選択]\nCtrl+A          すべて選択\nCtrl+D          選択解除\nCtrl+クリック   個別追加/解除\nShift+クリック  範囲選択\nShift+矢印      選択範囲を拡張\nドラッグ        矩形ドラッグで範囲選択\nEscape          複数選択を解除して単一選択に戻す\n\n[グリッド操作]\n←↑↓→          カーソル移動\nPageUp/Down     ページ単位で移動\nHome / End      先頭 / 末尾に移動\nEnter           全画面表示\nCtrl+ホイール   サムネサイズ変更\n\n[フォルダ移動]\nCtrl+Left/Right 前後のフォルダ\nAlt+Left/Right  前後のフォルダ\nAlt+Up          親フォルダへ移動\n\n[表示・情報]\nAlt+Enter       プロパティ\nF1              このヘルプ\nCtrl+,          環境設定\n\n[起動時]\n前回開いていたフォルダを自動復元します。\n\n[右パネル]\nプレビューと情報エリアの境界をドラッグしてリサイズ可能\n\n[FullViewer]\n←→↑↓ PgUp/Dn  前後の画像\nSpace / F11     没入モード ON/OFF\nR               回転    +/-  ズーム\n0               等倍    S    スライドショー\nEsc/Enter       閉じる  Delete  削除\n': {"en": '\nKeyboard shortcuts\n\n[File operations]\nCtrl+O          Open folder\nF5              Refresh (reload)\nF2              Rename\nDelete          Move to Recycle Bin (multi-select)\nShift+Delete    Delete permanently (bypass Recycle Bin)\nCtrl+C          Copy (as files)\nCtrl+X          Cut\nCtrl+V          Paste\nCtrl+Shift+N    New folder\n\n[Bookmarks]\nCtrl+B          Show bookmark list\nCtrl+Shift+B    Add current folder to bookmarks\n\n[Selection]\nCtrl+A          Select all\nCtrl+D          Deselect\nCtrl+Click      Toggle individual selection\nShift+Click     Range selection\nShift+Arrow     Extend selection range\nDrag            Rectangle drag selection\nEscape          Clear multi-selection, back to single selection\n\n[Grid]\n←↑↓→          Move cursor\nPageUp/Down     Move page by page\nHome / End      Move to start / end\nEnter           Fullscreen view\nCtrl+Wheel      Change thumbnail size\n\n[Folder navigation]\nCtrl+Left/Right Previous / next folder\nAlt+Left/Right  Previous / next folder\nAlt+Up          Go up to parent folder\n\n[View / info]\nAlt+Enter       Properties\nF1              This help\nCtrl+,          Settings\n\n[On startup]\nAutomatically restores the folder that was open last time.\n\n[Right panel]\nDrag the boundary between the preview and info areas to resize\n\n[FullViewer]\n←→↑↓ PgUp/Dn  Previous / next image\nSpace / F11     Immersive mode ON/OFF\nR               Rotate    +/-  Zoom\n0               Actual size    S    Slideshow\nEsc/Enter       Close    Delete  Delete\n', "zh": '\n键盘快捷键\n\n[文件操作]\nCtrl+O          打开文件夹\nF5              刷新（重新加载）\nF2              重命名\nDelete          移动到回收站（支持多选）\nShift+Delete    彻底删除（不使用回收站）\nCtrl+C          复制（作为文件）\nCtrl+X          剪切\nCtrl+V          粘贴\nCtrl+Shift+N    新建文件夹\n\n[书签]\nCtrl+B          显示书签列表\nCtrl+Shift+B    将当前文件夹添加到书签\n\n[选择]\nCtrl+A          全选\nCtrl+D          取消选择\nCtrl+点击       单个添加/取消\nShift+点击      范围选择\nShift+方向键    扩展选择范围\n拖动            矩形框选\nEscape          取消多选，恢复单选\n\n[网格操作]\n←↑↓→          移动光标\nPageUp/Down     按页移动\nHome / End      移动到开头 / 末尾\nEnter           全屏显示\nCtrl+滚轮       缩略图大小\n\n[文件夹移动]\nCtrl+Left/Right 上一/下一文件夹\nAlt+Left/Right  上一/下一文件夹\nAlt+Up          返回上级文件夹\n\n[显示/信息]\nAlt+Enter       属性\nF1              此帮助\nCtrl+,          设置\n\n[启动时]\n自动恢复上次打开的文件夹。\n\n[右面板]\n拖动预览和信息区域之间的边界可调整大小\n\n[FullViewer]\n←→↑↓ PgUp/Dn  上一张/下一张图片\nSpace / F11     沉浸模式 ON/OFF\nR               旋转    +/-  缩放\n0               实际大小    S    幻灯片\nEsc/Enter       关闭    Delete  删除\n', "ko": '\n키보드 단축키\n\n[파일 작업]\nCtrl+O          폴더 열기\nF5              새로고침 (다시 불러오기)\nF2              이름 변경\nDelete          휴지통으로 이동 (다중 선택 지원)\nShift+Delete    완전 삭제 (휴지통 사용 안 함)\nCtrl+C          복사 (파일로)\nCtrl+X          잘라내기\nCtrl+V          붙여넣기\nCtrl+Shift+N    새 폴더 만들기\n\n[북마크]\nCtrl+B          북마크 목록 표시\nCtrl+Shift+B    현재 폴더를 북마크에 추가\n\n[선택]\nCtrl+A          전체 선택\nCtrl+D          선택 해제\nCtrl+클릭       개별 추가/해제\nShift+클릭      범위 선택\nShift+화살표    선택 범위 확장\n드래그          사각형 드래그로 범위 선택\nEscape          다중 선택 해제 후 단일 선택으로\n\n[그리드 조작]\n←↑↓→          커서 이동\nPageUp/Down     페이지 단위로 이동\nHome / End      처음 / 끝으로 이동\nEnter           전체 화면 표시\nCtrl+휠         썸네일 크기 변경\n\n[폴더 이동]\nCtrl+Left/Right 이전/다음 폴더\nAlt+Left/Right  이전/다음 폴더\nAlt+Up          상위 폴더로 이동\n\n[표시/정보]\nAlt+Enter       속성\nF1              이 도움말\nCtrl+,          환경 설정\n\n[시작 시]\n지난 번에 열었던 폴더를 자동으로 복원합니다.\n\n[오른쪽 패널]\n미리보기와 정보 영역 경계를 드래그하여 크기 조절\n\n[FullViewer]\n←→↑↓ PgUp/Dn  이전/다음 이미지\nSpace / F11     몰입 모드 ON/OFF\nR               회전    +/-  확대/축소\n0               실제 크기    S    슬라이드쇼\nEsc/Enter       닫기    Delete  삭제\n'},
+    '\nサイズ: ': {"en": '\nSize: ', "zh": '\n大小：', "ko": '\n크기: '},
+    '\n保持する上限を MB で指定してください（古いものから削除されます）。': {"en": '\nEnter the limit to keep in MB (oldest files will be deleted first).', "zh": '\n请以 MB 指定要保留的上限（将从最旧的开始删除）。', "ko": '\n유지할 상한을 MB 단위로 지정하세요 (오래된 것부터 삭제됩니다).'},
+    '\n場所: ': {"en": '\nLocation: ', "zh": '\n位置：', "ko": '\n위치: '},
+    '\n変更先: ': {"en": '\nChange to: ', "zh": '\n更改为：', "ko": '\n변경 대상: '},
+    '\n旧形式 .pkl: ': {"en": '\nLegacy .pkl: ', "zh": '\n旧格式 .pkl：', "ko": '\n구형식 .pkl: '},
+    '\n更新日時: ': {"en": '\nModified: ', "zh": '\n更新时间：', "ko": '\n수정 일시: '},
     'image_quality_sorter.py を読み込めませんでした:\n': {"en": 'Could not load image_quality_sorter.py:\n', "zh": '无法加载 image_quality_sorter.py：\n', "ko": 'image_quality_sorter.py 를 불러올 수 없습니다:\n'},
     'raw 文字列': {"en": 'raw string', "zh": '原始字符串', "ko": 'raw 문자열'},
     'settings.json の `thumb_cache_dir` 指定': {"en": '`thumb_cache_dir` in settings.json', "zh": 'settings.json 中的 `thumb_cache_dir` 指定', "ko": 'settings.json 의 `thumb_cache_dir` 지정'},
+    'thumb_mem=メモリヒット / thumb_disk=ディスクサムネ読込 / thumb_decode=デコード+縮小\n': {"en": 'thumb_mem=memory hit / thumb_disk=disk thumbnail read / thumb_decode=decode+resize\n', "zh": 'thumb_mem=内存命中 / thumb_disk=磁盘缩略图读取 / thumb_decode=解码+缩小\n', "ko": 'thumb_mem=메모리 히트 / thumb_disk=디스크 썸네일 읽기 / thumb_decode=디코드+리사이즈\n'},
     'thumb_mem=メモリヒット / thumb_disk=ディスクサムネ読込 / thumb_decode=デコード+縮小\npreview_mem/preview_load=右パネル等のプレビュー / fullview=全画面デコード': {"en": 'thumb_mem=memory hit / thumb_disk=disk thumbnail read / thumb_decode=decode+resize\npreview_mem/preview_load=right panel previews etc. / fullview=fullscreen decode', "zh": 'thumb_mem=内存命中 / thumb_disk=磁盘缩略图读取 / thumb_decode=解码+缩小\npreview_mem/preview_load=右侧面板等预览 / fullview=全屏解码', "ko": 'thumb_mem=메모리 히트 / thumb_disk=디스크 썸네일 읽기 / thumb_decode=디코드+리사이즈\npreview_mem/preview_load=오른쪽 패널 미리보기 등 / fullview=전체화면 디코드'},
     'transformers が見つかりません。\n\npython -m pip install transformers': {"en": 'transformers not found.\n\npython -m pip install transformers', "zh": '未找到 transformers。\n\npython -m pip install transformers', "ko": 'transformers 를 찾을 수 없습니다.\n\npython -m pip install transformers'},
     '※ LoRA名クリック時のCivitai検索と連携します': {"en": '※ Linked with Civitai search when clicking a LoRA name', "zh": '※ 点击 LoRA 名称时联动 Civitai 搜索', "ko": '※ LoRA 이름 클릭 시 Civitai 검색과 연동됩니다'},
+    '※ フォルダ内の .mp3/.wav/.flac/.ogg/.m4a をランダム順でループ再生。拍同期は BGM の BPM のみ基準。': {"en": "※ Loops .mp3/.wav/.flac/.ogg/.m4a files in the folder in random order. Beat sync uses BGM BPM only.", "zh": "※ 文件夹内的 .mp3/.wav/.flac/.ogg/.m4a 文件以随机顺序循环播放。节拍同步仅以 BGM 的 BPM 为基准。", "ko": "※ 폴더 내 .mp3/.wav/.flac/.ogg/.m4a 파일을 랜덤 순서로 반복 재생합니다. 박자 동기화는 BGM 의 BPM 만 기준입니다."},
+    '※ ロゴを登録したときはここに保存されます。\n': {"en": '※ Registered logo images are saved here.\n', "zh": '※ 注册的 Logo 图片将保存在这里。\n', "ko": '※ 등록한 로고는 여기에 저장됩니다.\n'},
     '※ ロゴを登録したときはここに保存されます。\n※ 既定の保存先: ': {"en": '※ Registered logo images are saved here.\n※ Default location: ', "zh": '※ 注册的 Logo 图片将保存在这里。\n※ 默认保存位置：', "ko": '※ 등록한 로고는 여기에 저장됩니다.\n※ 기본 저장 위치: '},
+    '※ 保存先を変更しても、ここに表示されている場所が現在の保存先です。': {"en": '※ Even if the location is changed, the path shown here is the current save location.', "zh": '※ 即使更改了保存位置，这里显示的仍然是当前保存位置。', "ko": '※ 저장 위치를 변경해도 여기에 표시된 경로가 현재 저장 위치입니다.'},
+    '※ 既定の保存先: ': {"en": '※ Default location: ', "zh": '※ 默认保存位置：', "ko": '※ 기본 저장 위치: '},
     '※列ヘッダーをクリックでソート': {"en": '※ Click column headers to sort', "zh": '※ 点击列标题可排序', "ko": '※ 열 헤더를 클릭하면 정렬합니다'},
+    '※数万枚ある場合はディスクI/Oにより一時的に動作が重くなる場合があります。': {"en": '※ With tens of thousands of images, disk I/O may temporarily make the app sluggish.', "zh": '※ 如果有几万张图片，磁盘 I/O 可能会暂时使应用变慢。', "ko": '※ 수만 장인 경우 디스크 I/O 때문에 일시적으로 동작이 느려질 수 있습니다.'},
     'ℹ バージョン情報 ': {"en": 'ℹ Version info ', "zh": 'ℹ 版本信息 ', "ko": 'ℹ 버전 정보 '},
     'ℹ プロパティ  Alt+Enter': {"en": 'ℹ Properties  Alt+Enter', "zh": 'ℹ 属性  Alt+Enter', "ko": 'ℹ 속성  Alt+Enter'},
     '←→/Tab でボタン選択\u3000\u3000Enter/Y = はい\u3000\u3000N/Esc = いいえ': {"en": '←→/Tab to select button\u3000\u3000Enter/Y = Yes\u3000\u3000N/Esc = No', "zh": '←→/Tab 选择按钮\u3000\u3000Enter/Y = 是\u3000\u3000N/Esc = 否', "ko": '←→/Tab 으로 버튼 선택\u3000\u3000Enter/Y = 예\u3000\u3000N/Esc = 아니오'},
@@ -377,6 +409,7 @@ _I18N_TABLE = {
     '☑ 全選択': {"en": '☑ Select all', "zh": '☑ 全选', "ko": '☑ 전체 선택'},
     '⚙ 環境設定': {"en": '⚙ Settings', "zh": '⚙ 环境设置', "ko": '⚙ 환경 설정'},
     '⚙ 環境設定...': {"en": '⚙ Settings...', "zh": '⚙ 环境设置...', "ko": '⚙ 환경 설정...'},
+    '⚠ PySide6.QtMultimedia が無いため音楽再生は無効です': {"en": "⚠ Music playback disabled (PySide6.QtMultimedia not available)", "zh": "⚠ 由于缺少 PySide6.QtMultimedia，音乐播放已禁用", "ko": "⚠ PySide6.QtMultimedia 이 없어 음악 재생이 비활성화되었습니다"},
     '⚠ 完全削除': {"en": '⚠ Delete permanently', "zh": '⚠ 彻底删除', "ko": '⚠ 완전 삭제'},
     '⚠ 完全削除  Shift+Delete': {"en": '⚠ Delete permanently  Shift+Delete', "zh": '⚠ 彻底删除  Shift+Delete', "ko": '⚠ 완전 삭제  Shift+Delete'},
     '⚠ 日付': {"en": '⚠ Date', "zh": '⚠ 日期', "ko": '⚠ 날짜'},
@@ -400,6 +433,7 @@ _I18N_TABLE = {
     'が解釈できません: ': {"en": ' cannot be interpreted: ', "zh": ' 无法解析：', "ko": '을(를) 해석할 수 없습니다: '},
     'このグループのファイルは見つかりません。': {"en": 'No files found in this group.', "zh": '此分组中未找到文件。', "ko": '이 그룹의 파일을 찾을 수 없습니다.'},
     'このファイルを削除しますか？': {"en": 'Delete this file?', "zh": '删除此文件吗？', "ko": '이 파일을 삭제하시겠습니까?'},
+    'この操作は取り消せません。\n\n': {"en": 'This cannot be undone.\n\n', "zh": '此操作无法撤销。\n\n', "ko": '이 작업은 취소할 수 없습니다.\n\n'},
     'すべて': {"en": 'All', "zh": '全部', "ko": '모두'},
     'すべて解除': {"en": 'Uncheck all', "zh": '全部取消', "ko": '모두 해제'},
     'すべて選択': {"en": 'Select all', "zh": '全选', "ko": '전체 선택'},
@@ -409,6 +443,7 @@ _I18N_TABLE = {
     'はい(Y)': {"en": 'Yes (Y)', "zh": '是(Y)', "ko": '예(Y)'},
     'まだ計測データがありません。\n画像を表示・スクロールしてから開いてください。': {"en": 'No measurement data yet.\nDisplay/scroll through images first, then open again.', "zh": '暂无测量数据。\n请先显示/滚动图片，然后再打开。', "ko": '아직 측정 데이터가 없습니다.\n이미지를 표시하거나 스크롤한 뒤 다시 열어주세요.'},
     'アクティビティログを表示/非表示': {"en": 'Show/hide activity log', "zh": '显示/隐藏活动日志', "ko": '활동 로그 표시/숨기기'},
+    'アプリを再起動すると新しい言語で表示されます': {"en": 'Restart the app to apply the new language.', "zh": '重新启动应用后将以新语言显示。', "ko": '앱을 다시 시작하면 새 언어로 표시됩니다.'},
     'アプリケーション起動': {"en": 'Application started', "zh": '应用已启动', "ko": '애플리케이션 시작'},
     'エラー': {"en": 'Error', "zh": '错误', "ko": '오류'},
     'エラーメッセージをクリップボードにコピー': {"en": 'Copy error message to clipboard', "zh": '将错误消息复制到剪贴板', "ko": '오류 메시지를 클립보드에 복사'},
@@ -429,6 +464,7 @@ _I18N_TABLE = {
     'グループを検出': {"en": 'Detect groups', "zh": '检测分组', "ko": '그룹 감지'},
     'ゴミ箱': {"en": 'Recycle Bin', "zh": '回收站', "ko": '휴지통'},
     'サイズ': {"en": 'Size', "zh": '大小', "ko": '크기'},
+    'サイズ: ': {"en": 'Size: ', "zh": '大小：', "ko": '크기: '},
     'サブ': {"en": 'Sub', "zh": '子', "ko": '서브'},
     'サブフォルダを含む': {"en": 'Include subfolders', "zh": '包含子文件夹', "ko": '하위 폴더 포함'},
     'サムネイルキャッシュはまだありません。': {"en": 'No thumbnail cache yet.', "zh": '尚无缩略图缓存。', "ko": '아직 썸네일 캐시가 없습니다.'},
@@ -445,6 +481,9 @@ _I18N_TABLE = {
     'スキャン完了。AI判定を開始します...': {"en": 'Scan complete. Starting AI assessment...', "zh": '扫描完成。开始 AI 判定...', "ko": '스캔 완료. AI 판정을 시작합니다...'},
     'スキャン完了待ち... 完了後にAI判定を自動開始します': {"en": 'Waiting for scan to complete... AI assessment will start automatically when done.', "zh": '正在等待扫描完成... 完成后将自动开始 AI 判定', "ko": '스캔 완료 대기 중... 완료 후 AI 판정을 자동 시작합니다'},
     'スライドショー (S)': {"en": 'Slideshow (S)', "zh": '幻灯片 (S)', "ko": '슬라이드쇼 (S)'},
+    'スライドショー時に再生': {"en": "Play during slideshow", "zh": "幻灯片播放时播放", "ko": "슬라이드쇼 중 재생"},
+    'スライドショー音楽 OFF': {"en": "Slideshow music OFF", "zh": "幻灯片音乐 OFF", "ko": "슬라이드쇼 음악 OFF"},
+    'スライドショー音楽 ON': {"en": "Slideshow music ON", "zh": "幻灯片音乐 ON", "ko": "슬라이드쇼 음악 ON"},
     'タグ (プロンプト/ネガ/LoRA)': {"en": 'Tags (prompt/negative/LoRA)', "zh": '标签 (提示词/负面/LoRA)', "ko": '태그 (프롬프트/네거티브/LoRA)'},
     'タグ名（部分一致）:': {"en": 'Tag name (partial match):', "zh": '标签名（部分匹配）：', "ko": '태그 이름 (부분 일치):'},
     'タグ追加': {"en": 'Add tag', "zh": '添加标签', "ko": '태그 추가'},
@@ -471,8 +510,8 @@ _I18N_TABLE = {
     'ファイル名': {"en": 'File name', "zh": '文件名', "ko": '파일 이름'},
     'ファイル名: ': {"en": 'File name: ', "zh": '文件名：', "ko": '파일 이름: '},
     'ファイル情報・メタ': {"en": 'File info / meta', "zh": '文件信息・元数据', "ko": '파일 정보·메타'},
-    'フォルダが見つかりません:\n': {"en": 'Folder not found:\n', "zh": '未找到文件夹：\n', "ko": '폴더를 찾을 수 없습니다:\n'},
     'フォルダが見つかりません: ': {"en": 'Folder not found: ', "zh": '未找到文件夹：', "ko": '폴더를 찾을 수 없습니다: '},
+    'フォルダが見つかりません:\n': {"en": 'Folder not found:\n', "zh": '未找到文件夹：\n', "ko": '폴더를 찾을 수 없습니다:\n'},
     'フォルダを作成しました: ': {"en": 'Folder created: ', "zh": '已创建文件夹：', "ko": '폴더를 만들었습니다: '},
     'フォルダを選択': {"en": 'Select folder', "zh": '选择文件夹', "ko": '폴더 선택'},
     'フォルダを開けません': {"en": 'Cannot open folder', "zh": '无法打开文件夹', "ko": '폴더를 열 수 없습니다'},
@@ -485,6 +524,7 @@ _I18N_TABLE = {
     'プレビュー': {"en": 'Preview', "zh": '预览', "ko": '미리보기'},
     'プロパティ': {"en": 'Properties', "zh": '属性', "ko": '속성'},
     'プロパティをコピーしました': {"en": 'Properties copied', "zh": '已复制属性', "ko": '속성을 복사했습니다'},
+    'プロンプトに指定したタグが含まれる画像に自動でロゴを適用します。\n': {"en": 'Automatically applies a logo to images whose prompt contains the specified tag.\n', "zh": '提示词中包含指定标签的图片将自动应用 Logo。\n', "ko": '프롬프트에 지정한 태그가 포함된 이미지에 로고를 자동 적용합니다.\n'},
     'プロンプトに指定したタグが含まれる画像に自動でロゴを適用します。\n手動でロゴを設定済みの画像には自動適用されません。': {"en": 'Automatically applies a logo to images whose prompt contains the specified tag.\nImages with a manually set logo are not auto-applied.', "zh": '提示词中包含指定标签的图片将自动应用 Logo。\n已手动设置 Logo 的图片不会自动应用。', "ko": '프롬프트에 지정한 태그가 포함된 이미지에 로고를 자동 적용합니다.\n직접 로고를 설정한 이미지에는 자동 적용되지 않습니다.'},
     'ヘルプ(&H)': {"en": 'Help(&H)', "zh": '帮助(&H)', "ko": '도움말(&H)'},
     'メイン': {"en": 'Main', "zh": '主要', "ko": '메인'},
@@ -504,6 +544,7 @@ _I18N_TABLE = {
     'ループ（最初/最後に戻る）': {"en": 'Loop (back to first/last)', "zh": '循环（回到开头/末尾）', "ko": '반복 (처음/마지막으로 돌아가기)'},
     'ロゴ': {"en": 'Logo', "zh": 'Logo', "ko": '로고'},
     'ロゴPNG を選択': {"en": 'Select logo PNG', "zh": '选择 Logo PNG', "ko": '로고 PNG 선택'},
+    'ロゴの保存先が変更されました。\n\n': {"en": 'The logo save location has changed.\n\n', "zh": 'Logo 保存位置已更改。\n\n', "ko": '로고 저장 위치가 변경되었습니다.\n\n'},
     'ロゴの保存先が変更されました。\n\n現在: ': {"en": 'The logo save location has changed.\n\nCurrent: ', "zh": 'Logo 保存位置已更改。\n\n当前：', "ko": '로고 저장 위치가 변경되었습니다.\n\n현재: '},
     'ロゴを置く位置を選択してください': {"en": 'Choose where to place the logo', "zh": '请选择 Logo 的位置', "ko": '로고를 배치할 위치를 선택하세요'},
     'ロゴ保存先:': {"en": 'Logo save folder:', "zh": 'Logo 保存位置：', "ko": '로고 저장 위치:'},
@@ -554,6 +595,7 @@ _I18N_TABLE = {
     '低': {"en": 'Low', "zh": '低', "ko": '하'},
     '作成日': {"en": 'Created', "zh": '创建日期', "ko": '생성일'},
     '作成日時': {"en": 'Created at', "zh": '创建时间', "ko": '생성 일시'},
+    '作成日時: ': {"en": 'Created: ', "zh": '创建时间：', "ko": '생성 일시: '},
     '使用枚数': {"en": 'Images used', "zh": '使用数量', "ko": '사용 장수'},
     '使用率': {"en": 'Usage rate', "zh": '使用率', "ko": '사용률'},
     '使用率(%)': {"en": 'Usage rate (%)', "zh": '使用率(%)', "ko": '사용률(%)'},
@@ -563,7 +605,9 @@ _I18N_TABLE = {
     '保存エラー': {"en": 'Save error', "zh": '保存错误', "ko": '저장 오류'},
     '保存先: ': {"en": 'Save to: ', "zh": '保存位置：', "ko": '저장 위치: '},
     '保存先のファイル名が多すぎます: ': {"en": 'Too many filenames in save location: ', "zh": '保存位置的文件名过多：', "ko": '저장 위치의 파일 이름이 너무 많습니다: '},
+    '保存先を変える場合は settings.json に絶対パスの `thumb_cache_dir` を指定します。': {"en": 'To change the location, set an absolute path `thumb_cache_dir` in settings.json.', "zh": '如需更改保存位置，请在 settings.json 中指定绝对路径 `thumb_cache_dir`。', "ko": '저장 위치를 변경하려면 settings.json 에 절대 경로 `thumb_cache_dir` 를 지정하세요.'},
     '保持': {"en": 'Keep', "zh": '保留', "ko": '유지'},
+    '保持する上限を MB で指定してください（古いものから削除されます）。': {"en": 'Enter the limit to keep in MB (oldest files will be deleted first).', "zh": '请以 MB 指定要保留的上限（将从最旧的开始删除）。', "ko": '유지할 상한을 MB 단위로 지정하세요 (오래된 것부터 삭제됩니다).'},
     '個を削除）': {"en": ' delete)', "zh": ' 个删除）', "ko": ' 개 삭제)'},
     '全': {"en": 'All', "zh": '全部', "ko": '전체'},
     '全て': {"en": 'All', "zh": '全部', "ko": '전체'},
@@ -573,6 +617,7 @@ _I18N_TABLE = {
     '全画面\nグリッド全画面': {"en": 'Fullscreen\nGrid fullscreen', "zh": '全屏\n网格全屏', "ko": '전체 화면\n그리드 전체 화면'},
     '全選択': {"en": 'Select all', "zh": '全选', "ko": '전체 선택'},
     '再判定': {"en": 'Re-evaluate', "zh": '重新判定', "ko": '재판정'},
+    '再生速度:': {"en": "Playback speed:", "zh": "播放速度：", "ko": "재생 속도:"},
     '再集計': {"en": 'Re-aggregate', "zh": '重新统计', "ko": '재집계'},
     '出力エラー': {"en": 'Export error', "zh": '导出错误', "ko": '출력 오류'},
     '出力フォルダを選択': {"en": 'Select output folder', "zh": '选择输出文件夹', "ko": '출력 폴더 선택'},
@@ -602,11 +647,14 @@ _I18N_TABLE = {
     '名前変更: ': {"en": 'Rename: ', "zh": '重命名：', "ko": '이름 변경: '},
     '四隅余白': {"en": 'Corner margins', "zh": '四角边距', "ko": '네 모서리 여백'},
     '回転 (R)': {"en": 'Rotate (R)', "zh": '旋转 (R)', "ko": '회전 (R)'},
+    '場所: ': {"en": 'Location: ', "zh": '位置：', "ko": '위치: '},
+    '変更先: ': {"en": 'Change to: ', "zh": '更改为：', "ko": '변경 대상: '},
     '完了': {"en": 'Done', "zh": '完成', "ko": '완료'},
     '完全一致': {"en": 'Exact match', "zh": '完全一致', "ko": '완전 일치'},
     '完全削除': {"en": 'Delete permanently', "zh": '彻底删除', "ko": '완전 삭제'},
     '実寸': {"en": 'Actual size', "zh": '实际尺寸', "ko": '실제 크기'},
     '実寸/fitモード切替': {"en": 'Toggle actual/fit mode', "zh": '实际尺寸/适应切换', "ko": '실제 크기/fit 모드 전환'},
+    '対応するサムネイルは次回表示時に再生成されます（画像本体は消えません）。\n': {"en": 'Related thumbnails will be regenerated next time they are displayed (original images are not deleted).\n', "zh": '对应缩略图下次显示时将重新生成（原图不会被删除）。\n', "ko": '해당 썸네일은 다음 표시 시 다시 생성됩니다 (이미지 원본은 삭제되지 않습니다).\n'},
     '小': {"en": 'Small', "zh": '小', "ko": '작게'},
     '履歴はまだありません。\n検索欄で Enter、または\n検索欄からフォーカスを\n外すと残ります。': {"en": 'No history yet.\nPress Enter in the search box, or\nmove focus away from the\nsearch box to save.', "zh": '暂无历史记录。\n在搜索框中按 Enter，\n或让搜索框失去焦点时\n会自动保存。', "ko": '아직 기록이 없습니다.\n검색란에서 Enter를 누르거나\n검색란에서 포커스를\n벗어나면 남습니다.'},
     '履歴をクリア': {"en": 'Clear history', "zh": '清除历史', "ko": '기록 지우기'},
@@ -619,6 +667,7 @@ _I18N_TABLE = {
     '年/月/日・年-月・年のみの入力も正規化して受け付けます（月・年のみは最終日に展開）': {"en": 'Accepts year/month/day, year-month, and year-only input normalized (month-only and year-only expand to the last day)', "zh": '接受 年/月/日·年-月·仅年份 输入并规范化（仅月/仅年时展开为月末/年末）', "ko": '년/월/일·년-월·년만 입력해도 정규화하여 처리합니다 (월만/년만은 말일로 펼칩니다)'},
     '手動位置': {"en": 'Manual position', "zh": '手动位置', "ko": '수동 위치'},
     '手動配置': {"en": 'Manual placement', "zh": '手动放置', "ko": '수동 배치'},
+    '拍': {"en": "beats", "zh": "拍", "ko": "박"},
     '拡大 (+)': {"en": 'Zoom in (+)', "zh": '放大 (+)', "ko": '확대 (+)'},
     '拡張子': {"en": 'Ext', "zh": '扩展名', "ko": '확장자'},
     '拡張子:': {"en": 'Ext:', "zh": '扩展名：', "ko": '확장자:'},
@@ -628,16 +677,20 @@ _I18N_TABLE = {
     '整理': {"en": 'Organize', "zh": '整理', "ko": '정리'},
     '新しいファイル名:': {"en": 'New file name:', "zh": '新文件名：', "ko": '새 파일 이름:'},
     '新しいフォルダ': {"en": 'New folder', "zh": '新建文件夹', "ko": '새 폴더'},
+    '既存のロゴ画像を新しい保存先へ移動しますか？': {"en": 'Move existing logo images to the new location?', "zh": '是否将现有 Logo 图片移动到新的保存位置？', "ko": '기존 로고 이미지를 새 저장 위치로 이동하시겠습니까?'},
     '既定（LOCALAPPDATA）': {"en": 'Default (LOCALAPPDATA)', "zh": '默认（LOCALAPPDATA）', "ko": '기본값 (LOCALAPPDATA)'},
     '日付': {"en": 'Date', "zh": '日期', "ko": '날짜'},
     '日時': {"en": 'Date/time', "zh": '日期时间', "ko": '일시'},
     '旧メタキャッシュの移行に失敗: ': {"en": 'Failed to migrate old meta cache: ', "zh": '旧元数据缓存迁移失败：', "ko": '구 메타 캐시 마이그레이션 실패: '},
+    '旧形式 .pkl は再生成されず、そのまま不要になります。': {"en": 'Legacy .pkl will not be regenerated and will simply become obsolete.', "zh": '旧格式 .pkl 不会重新生成，也不再需要。', "ko": '구형식 .pkl 은 재생성되지 않으며 그대로 불필요해집니다.'},
     '昇順/降順を切り替え': {"en": 'Toggle ascending/descending', "zh": '切换升序/降序', "ko": '오름/내림차순 전환'},
     '更新日時': {"en": 'Modified', "zh": '更新时间', "ko": '수정 일시'},
+    '更新日時: ': {"en": 'Modified: ', "zh": '更新时间：', "ko": '수정 일시: '},
     '最大': {"en": 'Max', "zh": '最大', "ko": '최대'},
     '最大 ms': {"en": 'Max ms', "zh": '最大 ms', "ko": '최대 ms'},
     '最大化 / 元に戻す': {"en": 'Maximize / restore', "zh": '最大化 / 还原', "ko": '최대화 / 복원'},
     '最終使用日': {"en": 'Last used', "zh": '最后使用日期', "ko": '최종 사용일'},
+    '有効な系統に再生可能なファイルがありません。環境設定 > 🎵 音楽 を確認してください': {"en": "No playable files in any enabled channel. Check Settings > 🎵 Music.", "zh": "已启用的通道中没有可播放的文件。请检查 设置 > 🎵 音乐。", "ko": "활성화된 채널에 재생 가능한 파일이 없습니다. 환경 설정 > 🎵 음악 을 확인하세요."},
     '未': {"en": 'N/A', "zh": '未', "ko": '미'},
     '未使用のみ': {"en": 'Unused only', "zh": '仅未使用', "ko": '미사용만'},
     '未判定': {"en": 'Not evaluated', "zh": '未判定', "ko": '미판정'},
@@ -649,6 +702,7 @@ _I18N_TABLE = {
     '枚 (類似': {"en": ' images (similar ', "zh": ' 张（相似', "ko": ' 장 (유사'},
     '枚)': {"en": ' images)', "zh": ' 张）', "ko": ' 장)'},
     '枚あります。初回サムネ生成に時間がかかります': {"en": ' images found. First-time thumbnail generation will take some time.', "zh": ' 张。首次缩略图生成需要一些时间', "ko": ' 장입니다. 최초 썸네일 생성에 시간이 걸립니다'},
+    '枚でスキャン完了  ': {"en": 'images scanned  (', "zh": ' 张扫描完成  （', "ko": ' 장으로 스캔 완료  ('},
     '枚でスキャン完了  (未使用 ': {"en": ' images scanned  (unused ', "zh": ' 张扫描完成  （未使用 ', "ko": ' 장으로 스캔 완료  (미사용 '},
     '枚選択中': {"en": ' images selected', "zh": ' 张已选中', "ko": ' 장 선택 중'},
     '検査: ': {"en": 'Inspection: ', "zh": '检查：', "ko": '검사: '},
@@ -661,12 +715,16 @@ _I18N_TABLE = {
     '標準': {"en": 'Standard', "zh": '标准', "ko": '표준'},
     '次のフォルダはありません': {"en": 'No next folder', "zh": '没有下一文件夹', "ko": '다음 폴더가 없습니다'},
     '正規表現として解釈': {"en": 'Interpret as regex', "zh": '按正则表达式解析', "ko": '정규식으로 해석'},
+    '残り ': {"en": 'Remaining ', "zh": '剩余 ', "ko": '남은 '},
     '没入モード (Space/F11)': {"en": 'Immersive mode (Space/F11)', "zh": '沉浸模式 (Space/F11)', "ko": '몰입 모드 (Space/F11)'},
+    '無効': {"en": "Disabled", "zh": "禁用", "ko": "비활성"},
     '現フォルダ': {"en": 'Current folder', "zh": '当前文件夹', "ko": '현재 폴더'},
     '現在 ': {"en": 'Current ', "zh": '当前 ', "ko": '현재 '},
+    '現在: ': {"en": 'Current: ', "zh": '当前：', "ko": '현재: '},
     '現在のAI判定は『破綻検出』ではありません。\naesthetic-shadow 系モデルを使った『見た目の好ましさ』寄りの評価です。\n\n判定の意味:\n高 : hq かつ score 0.5以上\n中 : 上の高/低に入らないもの\n低 : lq かつ score 0.5以上\n未 : まだAI評価していない\n\n注意:\n・ぼけや手崩れがあっても高になることがあります\n・『失敗画像検出』専用ではありません\n・低だけを荒く間引く用途向けです\n\nAI速度:\n自動 / 省メモリ / 標準 / 高速 / 最大 を選べます\nVRAM が少ない場合は 省メモリ、速さ優先なら 高速 / 最大 を使います\n\n使い方:\n1. ツール > AI画像評価 > AI評価を開始\n2. 下の進捗バーで完了まで待つ\n3. ツール > AI画像評価 > 低だけ表示 で確認\n4. 必要なら 低を全選択 / 低を削除 を使う': {"en": 'The current AI rating is not "breakage detection".\nIt uses an aesthetic-shadow family model leaning toward "visual preference".\n\nMeaning of ratings:\nHigh : hq and score 0.5 or higher\nMedium : anything not High/Low\nLow : lq and score 0.5 or higher\nN/A : not yet AI-rated\n\nNote:\n- Images may be rated High even if blurry or with hand artifacts\n- This is not a dedicated "failure detection" tool\n- Only suitable for roughly thinning out Low-rated images\n\nAI speed:\nYou can choose Auto / Low memory / Standard / Fast / Max\nUse Low memory if VRAM is limited, or Fast / Max if speed is priority\n\nHow to use:\n1. Tools > AI Image Rating > Start AI rating\n2. Wait for completion via the progress bar below\n3. Check via Tools > AI Image Rating > Show only low\n4. Optionally use Select all low / Delete low', "zh": '当前的 AI 判定并非「破损检测」。\n它是基于 aesthetic-shadow 系列模型、偏向「视觉美感」的评价。\n\n判定含义：\n高 : hq 且 score ≥ 0.5\n中 : 不属于高/低的图片\n低 : lq 且 score ≥ 0.5\n未 : 尚未经过 AI 评价\n\n注意：\n・即使模糊或手崩，也可能被判定为高\n・它并非专门的「失败图片检测」工具\n・仅适合用于粗略剔除低评分图片\n\nAI 速度：\n可选择 自动 / 省内存 / 标准 / 高速 / 最大\nVRAM 较少时请用 省内存，追求速度请用 高速 / 最大\n\n使用方法：\n1. 工具 > AI 图片评价 > 开始 AI 评价\n2. 下方进度条等待完成\n3. 通过 工具 > AI 图片评价 > 仅显示低分 查看\n4. 需要时使用 全选低分 / 删除低分', "ko": '현재 AI 판정은 『파손 검출』이 아닙니다.\naesthetic-shadow 계열 모델을 사용한 『시각적 호감』 위주의 평가입니다.\n\n판정의 의미:\n높음 : hq 그리고 score 0.5 이상\n보통 : 위의 높음/낮음에 해당하지 않는 것\n낮음 : lq 그리고 score 0.5 이상\n미평가 : 아직 AI 평가하지 않음\n\n주의:\n・흐리거나 손이 깨져도 높음이 될 수 있습니다\n・『실패 이미지 검출』 전용이 아닙니다\n・낮음만 거칠게 솎아내는 용도에 적합합니다\n\nAI 속도:\n자동 / 저메모리 / 표준 / 고속 / 최대 를 선택할 수 있습니다\nVRAM이 적으면 저메모리, 속도 우선이면 고속 / 최대 를 사용하세요\n\n사용 방법:\n1. 도구 > AI 이미지 평가 > AI 평가 시작\n2. 아래 진행 표시줄로 완료까지 대기\n3. 도구 > AI 이미지 평가 > 낮음만 표시 에서 확인\n4. 필요하면 낮음 전체 선택 / 낮음 삭제 를 사용'},
     '現在のフォルダをお気に入りに追加': {"en": 'Add current folder to favorites', "zh": '将当前文件夹添加到收藏', "ko": '현재 폴더를 즐겨찾기에 추가'},
     '現在の表示対象 ': {"en": 'Currently showing ', "zh": '当前显示对象 ', "ko": '현재 표시 대상 '},
+    '現行形式 .raw: ': {"en": 'Current .raw format: ', "zh": '当前格式 .raw：', "ko": '현재 형식 .raw: '},
     '環境設定を保存しました': {"en": 'Settings saved', "zh": '已保存环境设置', "ko": '환경 설정을 저장했습니다'},
     '生成ステップ数の範囲。値が不明な画像は除外されます': {"en": 'Number of steps range. Images with unknown values are excluded.', "zh": '生成步数范围。值未知的图片将被排除。', "ko": '생성 스텝 수 범위. 알 수 없는 값의 이미지는 제외됩니다'},
     '生成パラメータ': {"en": 'Generation parameters', "zh": '生成参数', "ko": '생성 파라미터'},
@@ -674,12 +732,14 @@ _I18N_TABLE = {
     '画像を読み込めません': {"en": 'Cannot read image', "zh": '无法读取图片', "ko": '이미지를 불러올 수 없습니다'},
     '画像を選択してから実行してください': {"en": 'Select an image first', "zh": '请先选择图片', "ko": '이미지를 선택한 뒤 실행하세요'},
     '画像サイズ': {"en": 'Image size', "zh": '图片尺寸', "ko": '이미지 크기'},
+    '画像サイズ: ': {"en": 'Image size: ', "zh": '图片尺寸：', "ko": '이미지 크기: '},
     '画像ファイル (*.png *.PNG *.jpg *.jpeg *.webp)': {"en": 'Image files (*.png *.PNG *.jpg *.jpeg *.webp)', "zh": '图片文件 (*.png *.PNG *.jpg *.jpeg *.webp)', "ko": '이미지 파일 (*.png *.PNG *.jpg *.jpeg *.webp)'},
     '画像端でのループ': {"en": 'Loop at image edges', "zh": '图片边缘循环', "ko": '이미지 끝에서의 반복'},
     '省メモリ': {"en": 'Low memory', "zh": '省内存', "ko": '저메모리'},
     '短辺(px) の範囲。寸法が不明な画像は除外されます': {"en": 'Short side (px) range. Images with unknown dimensions are excluded.', "zh": '短边(px) 范围。尺寸未知的图片将被排除。', "ko": '짧은 변(px) 범위. 크기가 알 수 없는 이미지는 제외됩니다'},
     '確認': {"en": 'Confirm', "zh": '确认', "ko": '확인'},
     '秒': {"en": ' sec', "zh": ' 秒', "ko": ' 초'},
+    '移行時は先に丸ごとコピーし、全件サイズ一致を確認してから元を削除してください': {"en": 'When migrating, copy everything first, verify all file sizes match, then delete the original', "zh": '迁移时请先完整复制，确认所有文件大小一致后再删除原文件', "ko": '마이그레이션 시에는 먼저 전체를 복사하고 모든 파일 크기가 일치하는지 확인한 뒤 원본을 삭제하세요'},
     '端で停止（画像上にメッセージ表示）': {"en": 'Stop at edge (message shown on image)', "zh": '在边缘停止（在图片上显示消息）', "ko": '끝에서 정지 (이미지 위에 메시지 표시)'},
     '等倍 (0)': {"en": 'Actual size (0)', "zh": '原始大小 (0)', "ko": '실제 크기 (0)'},
     '範囲指定': {"en": 'Range', "zh": '范围指定', "ko": '범위 지정'},
@@ -692,7 +752,10 @@ _I18N_TABLE = {
     '表示(&V)': {"en": 'View(&V)', "zh": '显示(&V)', "ko": '보기(&V)'},
     '表示レイアウト切り替え': {"en": 'Switch display layout', "zh": '切换显示布局', "ko": '표시 레이아웃 전환'},
     '表示枚数 / 総枚数': {"en": 'Shown / total', "zh": '显示数量 / 总数量', "ko": '표시 수 / 전체 수'},
+    '表示言語': {"en": 'Display language', "zh": '显示语言', "ko": '표시 언어'},
     '解像度': {"en": 'Resolution', "zh": '分辨率', "ko": '해상도'},
+    '言語': {"en": 'Language', "zh": '语言', "ko": '언어'},
+    '計 ': {"en": 'Total ', "zh": '合计 ', "ko": '합계 '},
     '設定(&S)': {"en": 'Settings(&S)', "zh": '设置(&S)', "ko": '설정(&S)'},
     '詳細パネルの条件をすべて初期状態に戻します（検索バーの入力は残ります）': {"en": 'Reset all conditions in the Details panel to default (the search bar input is kept)', "zh": '将详细面板的所有条件恢复为初始状态（搜索栏输入保留）', "ko": '상세 패널의 모든 조건을 초기 상태로 되돌립니다 (검색 바 입력은 유지됩니다)'},
     '詳細プロパティを開く...': {"en": 'Open advanced properties...', "zh": '打开详细属性...', "ko": '상세 속성 열기...'},
@@ -701,6 +764,7 @@ _I18N_TABLE = {
     '読み込み中...': {"en": 'Loading...', "zh": '正在读取...', "ko": '읽는 중...'},
     '読み込む拡張子（チェック=有効）': {"en": 'Extensions to load (checked = enabled)', "zh": '要读取的扩展名（勾选=启用）', "ko": '불러올 확장자 (체크=활성)'},
     '読み込めませんでした: ': {"en": 'Could not load: ', "zh": '无法读取：', "ko": '불러올 수 없습니다: '},
+    '送り拍数:': {"en": "Beats per advance:", "zh": "每张节拍数：", "ko": "장당 박자수:"},
     '送り間隔 (フレーム, 60fps 基準) / 1F≈16.67ms / 60F=1秒 / 180F=3秒': {"en": 'Interval (frames, 60fps base) / 1F≈16.67ms / 60F=1s / 180F=3s', "zh": '间隔（帧，60fps 基准）/ 1F≈16.67ms / 60F=1秒 / 180F=3秒', "ko": '간격 (프레임, 60fps 기준) / 1F≈16.67ms / 60F=1초 / 180F=3초'},
     '適用': {"en": 'Apply', "zh": '应用', "ko": '적용'},
     '配置': {"en": 'Layout', "zh": '排列', "ko": '배치'},
@@ -723,6 +787,10 @@ _I18N_TABLE = {
     '閉じる (Esc/Enter)': {"en": 'Close (Esc/Enter)', "zh": '关闭 (Esc/Enter)', "ko": '닫기 (Esc/Enter)'},
     '開始': {"en": 'Start', "zh": '开始', "ko": '시작'},
     '開始 2026-01-01': {"en": 'Start 2026-01-01', "zh": '开始 2026-01-01', "ko": '시작 2026-01-01'},
+    '音声フォルダ:': {"en": "Voice folder:", "zh": "语音文件夹：", "ko": "음성 폴더:"},
+    '音声・セリフフォルダを選択': {"en": "Select voice / lines folder", "zh": "选择语音·台词文件夹", "ko": "음성·대사 폴더 선택"},
+    '音声・セリフ（拍同期なし、独立再生）': {"en": "Voice / Lines (no beat sync, independent)", "zh": "语音·台词（无节拍同步，独立播放）", "ko": "음성·대사 (박자 동기화 없음, 독립 재생)"},
+    '音量:': {"en": "Volume:", "zh": "音量：", "ko": "볼륨:"},
     '類似': {"en": 'Similar', "zh": '相似', "ko": '유사'},
     '類似画像: ': {"en": 'Similar images: ', "zh": '相似图片：', "ko": '유사 이미지: '},
     '類似画像を検索中...': {"en": 'Searching similar images...', "zh": '正在搜索相似图片...', "ko": '유사 이미지 검색 중...'},
@@ -731,11 +799,14 @@ _I18N_TABLE = {
     '高:': {"en": 'High:', "zh": '高：', "ko": '높음:'},
     '高速': {"en": 'High speed', "zh": '高速', "ko": '고속'},
     '（YYYY-MM-DD / YYYY/MM/DD / YYYYMMDD / YYYY-MM で入力してください。この条件は無視しました）': {"en": '(Enter as YYYY-MM-DD / YYYY/MM/DD / YYYYMMDD / YYYY-MM. This condition was ignored.)', "zh": '（请以 YYYY-MM-DD / YYYY/MM/DD / YYYYMMDD / YYYY-MM 输入。此条件已被忽略）', "ko": '(YYYY-MM-DD / YYYY/MM/DD / YYYYMMDD / YYYY-MM 형식으로 입력하세요. 이 조건은 무시되었습니다)'},
+    '（コピー先に `.fmt_version` が無いと起動時の自動消去で全キャッシュが消えます）。': {"en": ' (without `.fmt_version` in the destination, the automatic cleanup at startup will delete the entire cache).', "zh": '（如果目标位置没有 `.fmt_version`，启动时的自动清理会删除全部缓存）。', "ko": '(대상에 `.fmt_version` 이 없으면 시작 시 자동 정리로 전체 캐시가 삭제됩니다).'},
+    '（現行コードは読まない残骸）': {"en": ' (remnants not read by current code)', "zh": '（当前代码不读取的残留）', "ko": '(현재 코드가 읽지 않는 잔여물)'},
     '（通常の部分一致で検索します）': {"en": '(searching with normal partial match)', "zh": '（使用普通部分匹配搜索）', "ko": '(일반 부분 일치로 검색합니다)'},
     '）\n\n計 ': {"en": ')\n\nTotal ', "zh": '）\n\n合计 ', "ko": ')\n\n합계 '},
     '🌐 Civitai で開く': {"en": '🌐 Open on Civitai', "zh": '🌐 在 Civitai 上打开', "ko": '🌐 Civitai 에서 열기'},
     '🎨 ロゴ/タグ連動設定': {"en": '🎨 Logo/tag linkage settings', "zh": '🎨 Logo/标签联动设置', "ko": '🎨 로고/태그 연동 설정'},
     '🎨 ロゴオーバーレイ': {"en": '🎨 Logo overlay', "zh": '🎨 Logo 叠加', "ko": '🎨 로고 오버레이'},
+    '🎵 音楽': {"en": "🎵 Music", "zh": "🎵 音乐", "ko": "🎵 음악"},
     '🏷 タグ一覧': {"en": '🏷 Tag list', "zh": '🏷 标签列表', "ko": '🏷 태그 목록'},
     '👀 このグループを表示': {"en": '👀 Show this group', "zh": '👀 显示此分组', "ko": '👀 이 그룹 표시'},
     '👀 選択グループをグリッド表示': {"en": '👀 Show selected groups in grid', "zh": '👀 以网格显示所选分组', "ko": '👀 선택 그룹을 그리드 표시'},
@@ -805,46 +876,6 @@ _I18N_TABLE = {
     '🗑 削除  —  ': {"en": '🗑 Delete  —  ', "zh": '🗑 删除  —  ', "ko": '🗑 삭제  —  '},
     '🧰 ツールバーを表示': {"en": '🧰 Show toolbar', "zh": '🧰 显示工具栏', "ko": '🧰 도구 모음 표시'},
     '🧹 サムネキャッシュを整理（古い順に上限まで）': {"en": '🧹 Clean thumbnail cache (oldest first, up to limit)', "zh": '🧹 整理缩略图缓存（从最旧开始，直到达到上限）', "ko": '🧹 썸네일 캐시 정리 (오래된 순, 상한까지)'},
-    '枚でスキャン完了  ': {"en": 'images scanned  (', "zh": ' 张扫描完成  （', "ko": ' 장으로 스캔 완료  ('},
-    '(未使用 ': {"en": 'unused ', "zh": ' 未使用 ', "ko": ' 미사용 '},
-    ' ファイルを完全に削除します。\n': {"en": ' Delete permanently.\n', "zh": ' 彻底删除该文件。\n', "ko": ' 파일을 완전히 삭제합니다.\n'},
-    'この操作は取り消せません。\n\n': {"en": 'This cannot be undone.\n\n', "zh": '此操作无法撤销。\n\n', "ko": '이 작업은 취소할 수 없습니다.\n\n'},
-    '※ ロゴを登録したときはここに保存されます。\n': {"en": '※ Registered logo images are saved here.\n', "zh": '※ 注册的 Logo 图片将保存在这里。\n', "ko": '※ 등록한 로고는 여기에 저장됩니다.\n'},
-    '※ 既定の保存先: ': {"en": '※ Default location: ', "zh": '※ 默认保存位置：', "ko": '※ 기본 저장 위치: '},
-    '※ 保存先を変更しても、ここに表示されている場所が現在の保存先です。': {"en": '※ Even if the location is changed, the path shown here is the current save location.', "zh": '※ 即使更改了保存位置，这里显示的仍然是当前保存位置。', "ko": '※ 저장 위치를 변경해도 여기에 표시된 경로가 현재 저장 위치입니다.'},
-    '場所: ': {"en": 'Location: ', "zh": '位置：', "ko": '위치: '},
-    'サイズ: ': {"en": 'Size: ', "zh": '大小：', "ko": '크기: '},
-    ' バイト)\n': {"en": ' bytes)\n', "zh": ' 字节）\n', "ko": ' 바이트)\n'},
-    '画像サイズ: ': {"en": 'Image size: ', "zh": '图片尺寸：', "ko": '이미지 크기: '},
-    '作成日時: ': {"en": 'Created: ', "zh": '创建时间：', "ko": '생성 일시: '},
-    '更新日時: ': {"en": 'Modified: ', "zh": '更新时间：', "ko": '수정 일시: '},
-    'PySide6 版 — tkinter 版 v11 を完全書き直し<br>': {"en": 'PySide6 version — complete rewrite of the tkinter version v11<br>', "zh": 'PySide6 版 — 完全重写了 tkinter 版 v11<br>', "ko": 'PySide6 버전 — tkinter 버전 v11을 완전히 재작성<br>'},
-    '<br>依存: PySide6, Pillow': {"en": '<br>Dependencies: PySide6, Pillow', "zh": '<br>依赖：PySide6, Pillow', "ko": '<br>의존성: PySide6, Pillow'},
-    '  |  類似: ': {"en": '  |  Similar: ', "zh": '  |  相似：', "ko": '  |  유사: '},
-    '  |  選択中グループ: ': {"en": '  |  Selected group: ', "zh": '  |  所选分组：', "ko": '  |  선택 그룹: '},
-    '計 ': {"en": 'Total ', "zh": '合计 ', "ko": '합계 '},
-    '現行形式 .raw: ': {"en": 'Current .raw format: ', "zh": '当前格式 .raw：', "ko": '현재 형식 .raw: '},
-    '保存先を変える場合は settings.json に絶対パスの `thumb_cache_dir` を指定します。': {"en": 'To change the location, set an absolute path `thumb_cache_dir` in settings.json.', "zh": '如需更改保存位置，请在 settings.json 中指定绝对路径 `thumb_cache_dir`。', "ko": '저장 위치를 변경하려면 settings.json 에 절대 경로 `thumb_cache_dir` 를 지정하세요.'},
-    '移行時は先に丸ごとコピーし、全件サイズ一致を確認してから元を削除してください': {"en": 'When migrating, copy everything first, verify all file sizes match, then delete the original', "zh": '迁移时请先完整复制，确认所有文件大小一致后再删除原文件', "ko": '마이그레이션 시에는 먼저 전체를 복사하고 모든 파일 크기가 일치하는지 확인한 뒤 원본을 삭제하세요'},
-    '（コピー先に `.fmt_version` が無いと起動時の自動消去で全キャッシュが消えます）。': {"en": ' (without `.fmt_version` in the destination, the automatic cleanup at startup will delete the entire cache).', "zh": '（如果目标位置没有 `.fmt_version`，启动时的自动清理会删除全部缓存）。', "ko": '(대상에 `.fmt_version` 이 없으면 시작 시 자동 정리로 전체 캐시가 삭제됩니다).'},
-    '（現行コードは読まない残骸）': {"en": ' (remnants not read by current code)', "zh": '（当前代码不读取的残留）', "ko": '(현재 코드가 읽지 않는 잔여물)'},
-    '保持する上限を MB で指定してください（古いものから削除されます）。': {"en": 'Enter the limit to keep in MB (oldest files will be deleted first).', "zh": '请以 MB 指定要保留的上限（将从最旧的开始删除）。', "ko": '유지할 상한을 MB 단위로 지정하세요 (오래된 것부터 삭제됩니다).'},
-    'MB を削除します。続行しますか？\n': {"en": ' MB will be deleted. Continue?\n', "zh": ' MB 将被删除。是否继续？\n', "ko": ' MB 를 삭제합니다. 계속하시겠습니까?\n'},
-    '対応するサムネイルは次回表示時に再生成されます（画像本体は消えません）。\n': {"en": 'Related thumbnails will be regenerated next time they are displayed (original images are not deleted).\n', "zh": '对应缩略图下次显示时将重新生成（原图不会被删除）。\n', "ko": '해당 썸네일은 다음 표시 시 다시 생성됩니다 (이미지 원본은 삭제되지 않습니다).\n'},
-    '旧形式 .pkl は再生成されず、そのまま不要になります。': {"en": 'Legacy .pkl will not be regenerated and will simply become obsolete.', "zh": '旧格式 .pkl 不会重新生成，也不再需要。', "ko": '구형식 .pkl 은 재생성되지 않으며 그대로 불필요해집니다.'},
-    'MB を削除しました。\n': {"en": ' MB deleted.\n', "zh": ' MB 已删除。\n', "ko": ' MB 삭제됨.\n'},
-    '残り ': {"en": 'Remaining ', "zh": '剩余 ', "ko": '남은 '},
-    ' 件のサムネイルをバックグラウンドで生成しますか？\n': {"en": ' Generate thumbnails in the background?\n', "zh": ' 个缩略图？\n', "ko": ' 개의 썸네일을 백그라운드에서 생성할까요?\n'},
-    '※数万枚ある場合はディスクI/Oにより一時的に動作が重くなる場合があります。': {"en": '※ With tens of thousands of images, disk I/O may temporarily make the app sluggish.', "zh": '※ 如果有几万张图片，磁盘 I/O 可能会暂时使应用变慢。', "ko": '※ 수만 장인 경우 디스크 I/O 때문에 일시적으로 동작이 느려질 수 있습니다.'},
-    'thumb_mem=メモリヒット / thumb_disk=ディスクサムネ読込 / thumb_decode=デコード+縮小\n': {"en": 'thumb_mem=memory hit / thumb_disk=disk thumbnail read / thumb_decode=decode+resize\n', "zh": 'thumb_mem=内存命中 / thumb_disk=磁盘缩略图读取 / thumb_decode=解码+缩小\n', "ko": 'thumb_mem=메모리 히트 / thumb_disk=디스크 썸네일 읽기 / thumb_decode=디코드+리사이즈\n'},
-    'プロンプトに指定したタグが含まれる画像に自動でロゴを適用します。\n': {"en": 'Automatically applies a logo to images whose prompt contains the specified tag.\n', "zh": '提示词中包含指定标签的图片将自动应用 Logo。\n', "ko": '프롬프트에 지정한 태그가 포함된 이미지에 로고를 자동 적용합니다.\n'},
-    'ロゴの保存先が変更されました。\n\n': {"en": 'The logo save location has changed.\n\n', "zh": 'Logo 保存位置已更改。\n\n', "ko": '로고 저장 위치가 변경되었습니다.\n\n'},
-    '現在: ': {"en": 'Current: ', "zh": '当前：', "ko": '현재: '},
-    '変更先: ': {"en": 'Change to: ', "zh": '更改为：', "ko": '변경 대상: '},
-    '既存のロゴ画像を新しい保存先へ移動しますか？': {"en": 'Move existing logo images to the new location?', "zh": '是否将现有 Logo 图片移动到新的保存位置？', "ko": '기존 로고 이미지를 새 저장 위치로 이동하시겠습니까?'},
-    '言語': {"en": 'Language', "zh": '语言', "ko": '언어'},
-    '表示言語': {"en": 'Display language', "zh": '显示语言', "ko": '표시 언어'},
-    'アプリを再起動すると新しい言語で表示されます': {"en": 'Restart the app to apply the new language.', "zh": '重新启动应用后将以新语言显示。', "ko": '앱을 다시 시작하면 새 언어로 표시됩니다.'},
 }
 
 
@@ -4664,6 +4695,19 @@ class FullViewer(QDialog):
         self._busy_timer.setSingleShot(True)
         self._busy_timer.timeout.connect(self._show_busy_overlay)
 
+        # [v2.29] スライドショー音楽エンジン（BGM + 音声・セリフ 2系統）
+        self._bgm_player = None
+        self._bgm_output = None
+        self._voice_player = None
+        self._voice_output = None
+        self._bgm_queue: list[str] = []
+        self._voice_queue: list[str] = []
+        self._bgm_idx: int = 0
+        self._voice_idx: int = 0
+        self._music_on: bool = False
+        self._audio_ready: bool = False
+        self._init_audio_state()
+
         self._build_ui()
 
         # マウス追跡
@@ -4719,6 +4763,11 @@ class FullViewer(QDialog):
             f"border-bottom-right-radius:3px;}}"
             f"QSpinBox::up-button:hover,QSpinBox::down-button:hover{{background:#333;}}")
         self._ss_btn = tbtn("▶ SS", T("スライドショー (S)")); self._ss_btn.clicked.connect(self._toggle_ss)
+        self._music_btn = tbtn("🎵", T("スライドショー音楽 ON"))
+        self._music_btn.clicked.connect(self._toggle_music)
+        if not HAS_MULTIMEDIA:
+            self._music_btn.setEnabled(False)
+            self._music_btn.setToolTip(T("PySide6.QtMultimedia が無効"))
         self._fs_btn = tbtn(T("⛶ 全画面"), T("没入モード (Space/F11)"))
         self._fs_btn.clicked.connect(self._toggle_immersive)
         self._fit_btn = tbtn(T("⊞ 実寸"), T("実寸/fitモード切替"))
@@ -4732,7 +4781,7 @@ class FullViewer(QDialog):
             f"QPushButton{{background:#1e1e1e;color:{PAL['red']};border:1px solid #333;border-radius:4px;padding:0 8px;}}"
             f"QPushButton:hover{{background:{PAL['red']};color:#fff;}}")
 
-        for w in [self._ss_btn, QLabel(T("F")), self._ss_spin, self._fs_btn,
+        for w in [self._ss_btn, QLabel(T("F")), self._ss_spin, self._music_btn, self._fs_btn,
                   self._fit_btn, rot_btn, zin_btn, zout_btn, z1_btn, close_btn]:
             if isinstance(w, QLabel):
                 w.setStyleSheet(f"color:{PAL['fg2']};")
@@ -5147,6 +5196,11 @@ class FullViewer(QDialog):
                 ldr.terminate()
                 ldr.wait(300)
         self._prefetch.clear()
+        # [v2.29] 音楽プレイヤーを停止してリソース解放
+        try:
+            self._stop_music()
+        except Exception:
+            pass
         super().closeEvent(e)
 
     def resizeEvent(self, e):
@@ -5238,6 +5292,164 @@ class FullViewer(QDialog):
         if e.angleDelta().y() > 0: self._zoom_in()
         else: self._zoom_out()
 
+    # ── スライドショー音楽 (v2.29) ────────────────────────────────────────
+    _AUDIO_EXTS = (".mp3", ".wav", ".flac", ".ogg", ".m4a", ".aac", ".opus")
+
+    def _audio_cfg(self, key: str, default):
+        """parent (MainWindow) の _cfg から ss_* を読む。親が壊れている場合の防御。"""
+        mw = self.parent()
+        if mw is None or not hasattr(mw, "_cfg"):
+            return default
+        try:
+            return mw._cfg.get(key, default)
+        except Exception:
+            return default
+
+    def _init_audio_state(self):
+        """設定から BGM/音声フォルダをスキャンしてランダムキューを作る。
+        QMediaPlayer そのものは _ensure_audio_players で遅延作成。"""
+        if not HAS_MULTIMEDIA:
+            return
+        bgm_folder = (self._audio_cfg("ss_bgm_folder", "") or "").strip()
+        voice_folder = (self._audio_cfg("ss_voice_folder", "") or "").strip()
+        if bgm_folder and os.path.isdir(bgm_folder):
+            self._bgm_queue = self._scan_audio_folder(bgm_folder)
+        if voice_folder and os.path.isdir(voice_folder):
+            self._voice_queue = self._scan_audio_folder(voice_folder)
+
+    def _scan_audio_folder(self, folder: str) -> list[str]:
+        """フォルダ内の音楽ファイルを列挙して shuffle したパスリストを返す。
+        再帰はしない（1階層のみ）。"""
+        try:
+            entries = os.listdir(folder)
+        except OSError:
+            return []
+        out = []
+        for name in entries:
+            ext = os.path.splitext(name)[1].lower()
+            if ext in self._AUDIO_EXTS:
+                full = os.path.join(folder, name)
+                if os.path.isfile(full):
+                    out.append(full)
+        random.shuffle(out)
+        return out
+
+    def _ensure_audio_players(self):
+        """初回 ON 時に QMediaPlayer + QAudioOutput を作成。2 系統独立。"""
+        if self._audio_ready or not HAS_MULTIMEDIA:
+            return
+        self._bgm_output = QAudioOutput(self)
+        self._bgm_player = QMediaPlayer(self)
+        self._bgm_player.setAudioOutput(self._bgm_output)
+        self._bgm_player.mediaStatusChanged.connect(self._on_bgm_status)
+        self._voice_output = QAudioOutput(self)
+        self._voice_player = QMediaPlayer(self)
+        self._voice_player.setAudioOutput(self._voice_output)
+        self._voice_player.mediaStatusChanged.connect(self._on_voice_status)
+        # 音量・速度適用
+        self._bgm_output.setVolume(max(0.0, min(1.0, self._audio_cfg("ss_bgm_volume", 80) / 100.0)))
+        self._voice_output.setVolume(max(0.0, min(1.0, self._audio_cfg("ss_voice_volume", 100) / 100.0)))
+        try:
+            self._bgm_player.setPlaybackRate(float(self._audio_cfg("ss_bgm_speed", 1.0)))
+            self._voice_player.setPlaybackRate(float(self._audio_cfg("ss_voice_speed", 1.0)))
+        except Exception:
+            pass
+        self._audio_ready = True
+
+    def _on_bgm_status(self, status):
+        if status == QMediaPlayer.MediaStatus.EndOfMedia:
+            self._play_bgm_current(advance=True)
+
+    def _on_voice_status(self, status):
+        if status == QMediaPlayer.MediaStatus.EndOfMedia:
+            self._play_voice_current(advance=True)
+
+    def _play_bgm_current(self, advance: bool = False):
+        if not self._bgm_queue:
+            return
+        if advance:
+            self._bgm_idx = (self._bgm_idx + 1) % len(self._bgm_queue)
+        path = self._bgm_queue[self._bgm_idx]
+        self._bgm_player.stop()
+        self._bgm_player.setSource(QUrl.fromLocalFile(path))
+        self._bgm_player.play()
+
+    def _play_voice_current(self, advance: bool = False):
+        if not self._voice_queue:
+            return
+        if advance:
+            self._voice_idx = (self._voice_idx + 1) % len(self._voice_queue)
+        path = self._voice_queue[self._voice_idx]
+        self._voice_player.stop()
+        self._voice_player.setSource(QUrl.fromLocalFile(path))
+        self._voice_player.play()
+
+    def _toggle_music(self):
+        if not HAS_MULTIMEDIA:
+            QMessageBox.warning(self, T("音楽"), T("PySide6.QtMultimedia が無いため音楽再生できません"))
+            return
+        if self._music_on:
+            self._stop_music()
+            self._music_btn.setText("🎵")
+            self._music_btn.setToolTip(T("スライドショー音楽 ON"))
+        else:
+            self._ensure_audio_players()
+            # キューが空ならフォルダを再スキャン（設定変更後に対応）
+            if not self._bgm_queue:
+                folder = (self._audio_cfg("ss_bgm_folder", "") or "").strip()
+                if folder and os.path.isdir(folder):
+                    self._bgm_queue = self._scan_audio_folder(folder)
+            if not self._voice_queue:
+                folder = (self._audio_cfg("ss_voice_folder", "") or "").strip()
+                if folder and os.path.isdir(folder):
+                    self._voice_queue = self._scan_audio_folder(folder)
+            bgm_on = bool(self._audio_cfg("ss_bgm_enabled", False))
+            voice_on = bool(self._audio_cfg("ss_voice_enabled", False))
+            if bgm_on and self._bgm_queue:
+                self._bgm_idx = 0
+                self._play_bgm_current(advance=False)
+            if voice_on and self._voice_queue:
+                self._voice_idx = 0
+                self._play_voice_current(advance=False)
+            if not (bgm_on and self._bgm_queue) and not (voice_on and self._voice_queue):
+                QMessageBox.information(
+                    self, T("音楽"),
+                    T("有効な系統に再生可能なファイルがありません。環境設定 > 🎵 音楽 を確認してください"))
+                return
+            self._music_on = True
+            self._music_btn.setText("🎵⏸")
+            self._music_btn.setToolTip(T("スライドショー音楽 OFF"))
+
+    def _stop_music(self):
+        self._music_on = False
+        if self._bgm_player is not None:
+            self._bgm_player.stop()
+        if self._voice_player is not None:
+            self._voice_player.stop()
+
+    def _beat_interval_ms(self) -> int | None:
+        """BGM の BPM と拍数から送り間隔 (ms) を計算。
+        無効時（BGM OFF / BPM=0 / キュー空）は None を返し、呼び出し側が固定間隔にフォールバック。"""
+        if not self._music_on:
+            return None
+        if not bool(self._audio_cfg("ss_bgm_enabled", False)):
+            return None
+        bpm = int(self._audio_cfg("ss_bgm_bpm", 0))
+        if bpm <= 0:
+            return None
+        beat = int(self._audio_cfg("ss_bgm_beat", 4))
+        if beat <= 0:
+            beat = 4
+        # 再生速度で BPM が実効的に変わる（0.5倍速なら BPM 半分 = 間隔 2倍）
+        try:
+            rate = float(self._audio_cfg("ss_bgm_speed", 1.0))
+        except (TypeError, ValueError):
+            rate = 1.0
+        if rate <= 0:
+            rate = 1.0
+        interval = (60000.0 / bpm) * beat / rate
+        return max(16, int(interval))
+
     # ── スライドショー ────────────────────────────────────────────────────
     def _toggle_ss(self):
         if self._ss_job and self._ss_job.isActive():
@@ -5249,8 +5461,12 @@ class FullViewer(QDialog):
         if self._ss_job is None:
             self._ss_job = QTimer(self)
             self._ss_job.timeout.connect(self._next)
-        # 60fps 基準のフレーム数 → msec（Qt タイマー下限 16ms ≈ 1F）
-        interval = max(16, int(self._ss_spin.value() * 1000 / 60))
+        # 拍同期 (v2.29): BGM が有効なら BPM×拍数 で間隔算出、無ければフレーム数固定間隔
+        beat_ms = self._beat_interval_ms()
+        if beat_ms is not None:
+            interval = beat_ms
+        else:
+            interval = max(16, int(self._ss_spin.value() * 1000 / 60))
         self._ss_job.start(interval)
         self._ss_btn.setText("⏸ SS")
 
@@ -6164,6 +6380,78 @@ class SettingsDialog(QDialog):
         l5.addWidget(clear_btn); l5.addStretch()
         tabs.addTab(t5, T("キャッシュ"))
 
+        # ── タブ6: スライドショー音楽 (v2.29)
+        t6 = QWidget(); l6 = QVBoxLayout(t6)
+        if not HAS_MULTIMEDIA:
+            warn = QLabel(T("⚠ PySide6.QtMultimedia が無いため音楽再生は無効です"))
+            warn.setStyleSheet(f"color:{PAL['red']};")
+            l6.addWidget(warn); l6.addStretch()
+            tabs.addTab(t6, T("🎵 音楽"))
+        else:
+            # BGM グループ
+            bgm_grp = QGroupBox(T("BGM（拍同期の基準）"))
+            bgm_form = QFormLayout(bgm_grp)
+            self._ss_bgm_edit = QLineEdit(self._cfg.get("ss_bgm_folder", ""))
+            bgm_browse = QPushButton(T("参照..."))
+            bgm_browse.clicked.connect(self._browse_ss_bgm)
+            bgm_row = QHBoxLayout(); bgm_row.addWidget(self._ss_bgm_edit, 1); bgm_row.addWidget(bgm_browse)
+            bgm_form.addRow(T("BGMフォルダ:"), bgm_row)
+            self._ss_bgm_enabled = QCheckBox(T("スライドショー時に再生"))
+            self._ss_bgm_enabled.setChecked(bool(self._cfg.get("ss_bgm_enabled", False)))
+            bgm_form.addRow(self._ss_bgm_enabled)
+            self._ss_bgm_volume = QSlider(Qt.Orientation.Horizontal)
+            self._ss_bgm_volume.setRange(0, 100)
+            self._ss_bgm_volume.setValue(int(self._cfg.get("ss_bgm_volume", 80)))
+            self._ss_bgm_volume.setTickPosition(QSlider.TickPosition.NoTicks)
+            bgm_form.addRow(T("音量:"), self._ss_bgm_volume)
+            self._ss_bgm_speed = QDoubleSpinBox()
+            self._ss_bgm_speed.setRange(0.5, 2.0); self._ss_bgm_speed.setSingleStep(0.05)
+            self._ss_bgm_speed.setDecimals(2)
+            self._ss_bgm_speed.setValue(float(self._cfg.get("ss_bgm_speed", 1.0)))
+            bgm_form.addRow(T("再生速度:"), self._ss_bgm_speed)
+            self._ss_bgm_bpm = QSpinBox()
+            self._ss_bgm_bpm.setRange(0, 300)
+            self._ss_bgm_bpm.setValue(int(self._cfg.get("ss_bgm_bpm", 120)))
+            self._ss_bgm_bpm.setSpecialValueText(T("無効"))
+            bgm_form.addRow(T("BPM (0=無効):"), self._ss_bgm_bpm)
+            self._ss_bgm_beat = QComboBox()
+            for b in (1, 2, 4, 8):
+                self._ss_bgm_beat.addItem(f"{b} {T('拍')}", b)
+            saved_beat = int(self._cfg.get("ss_bgm_beat", 4))
+            bi = self._ss_bgm_beat.findData(saved_beat)
+            if bi >= 0: self._ss_bgm_beat.setCurrentIndex(bi)
+            bgm_form.addRow(T("送り拍数:"), self._ss_bgm_beat)
+            l6.addWidget(bgm_grp)
+
+            # 音声・セリフ グループ
+            voice_grp = QGroupBox(T("音声・セリフ（拍同期なし、独立再生）"))
+            voice_form = QFormLayout(voice_grp)
+            self._ss_voice_edit = QLineEdit(self._cfg.get("ss_voice_folder", ""))
+            voice_browse = QPushButton(T("参照..."))
+            voice_browse.clicked.connect(self._browse_ss_voice)
+            voice_row = QHBoxLayout(); voice_row.addWidget(self._ss_voice_edit, 1); voice_row.addWidget(voice_browse)
+            voice_form.addRow(T("音声フォルダ:"), voice_row)
+            self._ss_voice_enabled = QCheckBox(T("スライドショー時に再生"))
+            self._ss_voice_enabled.setChecked(bool(self._cfg.get("ss_voice_enabled", False)))
+            voice_form.addRow(self._ss_voice_enabled)
+            self._ss_voice_volume = QSlider(Qt.Orientation.Horizontal)
+            self._ss_voice_volume.setRange(0, 100)
+            self._ss_voice_volume.setValue(int(self._cfg.get("ss_voice_volume", 100)))
+            voice_form.addRow(T("音量:"), self._ss_voice_volume)
+            self._ss_voice_speed = QDoubleSpinBox()
+            self._ss_voice_speed.setRange(0.5, 2.0); self._ss_voice_speed.setSingleStep(0.05)
+            self._ss_voice_speed.setDecimals(2)
+            self._ss_voice_speed.setValue(float(self._cfg.get("ss_voice_speed", 1.0)))
+            voice_form.addRow(T("再生速度:"), self._ss_voice_speed)
+            l6.addWidget(voice_grp)
+
+            note = QLabel(T("※ フォルダ内の .mp3/.wav/.flac/.ogg/.m4a をランダム順でループ再生。拍同期は BGM の BPM のみ基準。"))
+            note.setWordWrap(True)
+            note.setStyleSheet(f"color:{PAL['fg3']};")
+            l6.addWidget(note)
+            l6.addStretch()
+            tabs.addTab(t6, T("🎵 音楽"))
+
         root.addWidget(tabs)
 
         # ── ボタン
@@ -6183,6 +6471,14 @@ class SettingsDialog(QDialog):
         if p:
             self._logo_edit.setText(p)
 
+    def _browse_ss_bgm(self):
+        p = QFileDialog.getExistingDirectory(self, T("BGMフォルダを選択"))
+        if p: self._ss_bgm_edit.setText(p)
+
+    def _browse_ss_voice(self):
+        p = QFileDialog.getExistingDirectory(self, T("音声・セリフフォルダを選択"))
+        if p: self._ss_voice_edit.setText(p)
+
     def _clear_cache(self):
         clear_cache()
         QMessageBox.information(self, T("完了"), T("サムネキャッシュを削除しました"))
@@ -6195,6 +6491,17 @@ class SettingsDialog(QDialog):
         self._cfg["lora_folder"] = self._lora_edit.text()
         self._cfg["logo_folder"] = self._logo_edit.text().strip()
         self._cfg["language"] = self._lang_combo.currentData()
+        if HAS_MULTIMEDIA and hasattr(self, "_ss_bgm_edit"):
+            self._cfg["ss_bgm_folder"]   = self._ss_bgm_edit.text().strip()
+            self._cfg["ss_bgm_enabled"]  = bool(self._ss_bgm_enabled.isChecked())
+            self._cfg["ss_bgm_volume"]   = int(self._ss_bgm_volume.value())
+            self._cfg["ss_bgm_speed"]    = float(self._ss_bgm_speed.value())
+            self._cfg["ss_bgm_bpm"]      = int(self._ss_bgm_bpm.value())
+            self._cfg["ss_bgm_beat"]     = int(self._ss_bgm_beat.currentData())
+            self._cfg["ss_voice_folder"] = self._ss_voice_edit.text().strip()
+            self._cfg["ss_voice_enabled"]  = bool(self._ss_voice_enabled.isChecked())
+            self._cfg["ss_voice_volume"]   = int(self._ss_voice_volume.value())
+            self._cfg["ss_voice_speed"]    = float(self._ss_voice_speed.value())
         self.accept()
 
     def focus_lora_tab(self):
