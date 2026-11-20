@@ -224,7 +224,7 @@ except Exception:
 # ══════════════════════════════════════════════════════════════════════════════
 #  定数・設定
 # ══════════════════════════════════════════════════════════════════════════════
-APP_VERSION  = "v2.38.8"
+APP_VERSION  = "v2.38.9"
 APP_NAME     = "Diffusion Gallery"
 VOLUME_MAX   = 400   # voice 音量スライダー上限(%)。100超は再生前 PCM 増幅(temp)で実現
 APP_AUTHOR   = "nemot"
@@ -5306,6 +5306,36 @@ class FullViewer(QDialog):
             return cached
         return None
 
+    def _show_thumb_placeholder(self, path: str):
+        """[v2.38.9] フル解像度のデコード待ちの間、グリッドのサムネイル（既に
+        デコード済み）を即時拡大表示してビューアを真っ白にしない。フル画像が届くと
+        _on_pixmap_loaded が同じパス前提で無トランジションに差し替える。
+        大PNGは Qt でスケールデコード不可のため初回デコードが数百ms かかる
+        （実測 169〜793ms）→ 体感待ち時間を短縮する。"""
+        try:
+            if self._fit_mode != "fit":
+                return  # 原寸/ズーム中はプレビュー拡大が粗すぎるので差し替えない
+            mw = self.parent()
+            grid = getattr(mw, "_grid", None)
+            if grid is None:
+                return
+            px = grid._pixmap_cache.get(path)
+            if px is None:
+                ts = getattr(grid, "_thumb_size", 0)
+                if ts:
+                    cached = _mem_get(f"{path}:{ts}")
+                    px = as_pixmap(cached) if cached is not None else None
+            if px is None or px.isNull():
+                return
+            self._pix_item.setPixmap(px)
+            self._scene.setSceneRect(QRectF(0, 0, px.width(), px.height()))
+            self._pix_item.setPos(0, 0)
+            self._pix_item.setScale(1.0)
+            self._cur_path = path  # 同じパス扱い → 本画像到着時に遷移アニメを再生しない
+            self._apply_view()
+        except Exception:
+            pass
+
     def _load_pixmap_async(self, path: str):
         """非同期でPixmapをデコードし、完了後に _on_pixmap_loaded を呼ぶ。
         キャッシュにあれば即シグナルを発火。読み込み中はインジケータを表示。"""
@@ -5341,6 +5371,10 @@ class FullViewer(QDialog):
         # ←/→ の送り 12 回中 12 回出ていた（実測）。_BUSY_DELAY 経過時点で
         # まだローダーが生きていたら出す。
         self._busy_timer.start(self._BUSY_DELAY)
+
+        # [v2.38.9] フルデコード待ちの間、既存サムネイルを即時拡大表示して
+        # ビューアを真っ白にしない（フル解像度は _on_pixmap_loaded が差し替える）。
+        self._show_thumb_placeholder(path)
 
         loader = _PixmapLoader(path, self._rot, self)
         loader.loaded.connect(self._on_pixmap_loaded)
