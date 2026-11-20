@@ -210,7 +210,7 @@ except ImportError:
 # ══════════════════════════════════════════════════════════════════════════════
 #  定数・設定
 # ══════════════════════════════════════════════════════════════════════════════
-APP_VERSION  = "v2.35.1"
+APP_VERSION  = "v2.35.2"
 APP_NAME     = "PNG Metadata Viewer"
 APP_AUTHOR   = "nemot"
 _APP_ICON_B64 = (
@@ -4779,6 +4779,7 @@ class FullViewer(QDialog):
         self._stripe_px = None      # [v2.35] 合成 QPixmap（サイズが変わった時だけ再生成）
         self._anim_state = None  # dict | None 進行中のトランジション情報
         self._shown_once = False  # [v2.35] 初回は遷移せず即時確定（残骸防止）
+        self._cur_path = None  # [v2.35.2] 表示中の画像パス（同じ画像の再表示では遷移しない）
         self._anim_timer = QTimer(self)
         self._anim_timer.setInterval(16)
         self._anim_timer.timeout.connect(self._anim_step)
@@ -5228,10 +5229,14 @@ class FullViewer(QDialog):
                 pass
         self._overlay_item.hide()
         old_px = self._pix_item.pixmap()
-        if self._anim_enabled() and self._shown_once and not old_px.isNull():
+        # [v2.35.2] 同じ画像の再表示（起動時の多重ロードや resize）では遷移しない。
+        # 実際の送り（パスが変わった）時だけアニメを再生する。
+        if (self._anim_enabled() and not old_px.isNull()
+                and self._cur_path is not None and self._cur_path != path):
             self._start_transition(old_px, px)
         else:
             self._commit_new(px)
+        self._cur_path = path
         self._shown_once = True
         try:
             st = os.stat(path)
