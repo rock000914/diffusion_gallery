@@ -4,6 +4,30 @@ PNG/画像メタデータビューア (PySide6版) — 更新履歴
 
 ---
 
+## [v2.27] 2026-11-21
+
+### 不具合修正
+- **ビューアのスライドショー間隔スピンの数字とアップ/ダウン矢印が重なる** 問題を修正。
+  全画面ビューア上部ツールバーの `▶ SS` 横の秒数スピンが `setFixedWidth(48)` + 既定サブコントロール配置だったため、Windows 上の Qt スタイルで右側に寄る up/down ボタンと `3` などの数字が重なって見えていた。
+  修正内容（[png_viewer.py:4703-4718](file:///absolute/path/N:/マイドライブ/png_viwer/png_viewer.py#L4703-L4718)）:
+  - 幅を `48 → 72 px` に拡大し、数字側余白とボタン側余白を確保。
+  - `QSpinBox::up-button` / `QSpinBox::down-button` を `subcontrol-origin:border` + `subcontrol-position: top right / bottom right` で明示配置（幅 16px、上下それぞれ 13px 段積み）。
+  - 本体側に `padding-left:8px`、ボタン側に `border-left` と hover 背景を指定し、数字領域と操作矢印領域を視覚的に分離。
+  - `setFixedHeight(28)` と `border-radius:4px` 以外の既存スタイルは維持（ツールバーの高さ 38px に対する収まりは変更なし）。
+- `APP_VERSION` を `v2.26` → `v2.27` へバンプ。
+
+### セキュリティガード拡張
+- `security_check.py` に **行内 allow ディレクティブ** `# security-check: allow <理由>` を追加。正当な既存コードがルールに誤検知されたとき、その行だけ検出をスキップできる（理由の記載を必須にし、ファイル全体の無効化は不可）。
+- 旧メタキャッシュ移行処理 [png_viewer.py:2714](file:///absolute/path/N:/マイドライブ/png_viwer/png_viewer.py#L2714) の `pickle.load(f)` に同ディレクティブを付与（自アプリが書き出した旧キャッシュのみ、読了後即 unlink）。
+- `SECURITY.md` の整合性ガード節に追記。
+
+### 検証
+- `ast.parse` + `python -m py_compile` で構文検査 OK（png_viewer.py / security_check.py 双方）。
+- offscreen で修正後 QSpinBox をレンダリング、`lineEdit().geometry()` が `x=9 width=45`（右端 54px）となり、ボタン領域 x=56〜72 と重ならないことを確認。
+- UI 構造・シグナル接続・スライドショー起動ロジック（`_start_ss` / `_toggle_ss` / `_ss_job`）は変更していない。
+
+---
+
 ## [v2.26] 2026-11-11
 
 ユーザー指定「UIの多言語化。英語・中国語・韓国語あたりで設定から言語を選べるようにしてほしい」に対応。

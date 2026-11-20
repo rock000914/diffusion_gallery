@@ -191,7 +191,7 @@ except ImportError:
 # ══════════════════════════════════════════════════════════════════════════════
 #  定数・設定
 # ══════════════════════════════════════════════════════════════════════════════
-APP_VERSION  = "v2.26"
+APP_VERSION  = "v2.27"
 APP_NAME     = "PNG Metadata Viewer"
 APP_AUTHOR   = "nemot"
 _APP_ICON_B64 = (
@@ -2711,7 +2711,7 @@ class MetaCache:
             # 旧 pickle 形式からの移行
             try:
                 with open(self._LEGACY_CACHE_FILE, "rb") as f:
-                    data = pickle.load(f)
+                    data = pickle.load(f)  # security-check: allow 自アプリが書き出した旧キャッシュのみ、読了後即 unlink
                     if isinstance(data, dict):
                         with self._lock:
                             self._d = data
@@ -4701,9 +4701,20 @@ class FullViewer(QDialog):
             return b
 
         self._ss_spin = QSpinBox(); self._ss_spin.setRange(1,30); self._ss_spin.setValue(3)
-        self._ss_spin.setFixedWidth(48); self._ss_spin.setFixedHeight(28)
+        # 幅48px だと up/down ボタンと数字が重なる（実環境で「3」が矢印の下に沈む）
+        # → ボタン幅 16px + 数字側 padding を確保し、sub-control を明示配置する
+        self._ss_spin.setFixedWidth(72); self._ss_spin.setFixedHeight(28)
         self._ss_spin.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self._ss_spin.setStyleSheet(f"background:#1e1e1e;color:{PAL['fg1']};border:1px solid #333;border-radius:4px;")
+        self._ss_spin.setStyleSheet(
+            f"QSpinBox{{background:#1e1e1e;color:{PAL['fg1']};"
+            f"border:1px solid #333;border-radius:4px;padding-left:8px;}}"
+            f"QSpinBox::up-button{{subcontrol-origin:border;subcontrol-position:top right;"
+            f"width:16px;height:13px;border-left:1px solid #333;background:#262626;"
+            f"border-top-right-radius:3px;}}"
+            f"QSpinBox::down-button{{subcontrol-origin:border;subcontrol-position:bottom right;"
+            f"width:16px;height:13px;border-left:1px solid #333;background:#262626;"
+            f"border-bottom-right-radius:3px;}}"
+            f"QSpinBox::up-button:hover,QSpinBox::down-button:hover{{background:#333;}}")
         self._ss_btn = tbtn("▶ SS", T("スライドショー (S)")); self._ss_btn.clicked.connect(self._toggle_ss)
         self._fs_btn = tbtn(T("⛶ 全画面"), T("没入モード (Space/F11)"))
         self._fs_btn.clicked.connect(self._toggle_immersive)

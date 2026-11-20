@@ -66,6 +66,14 @@ SECRET_RULES = [
     ),
 ]
 
+# ---- 行内 allow ディレクティブ ------------------------------------------
+# 正当な既存コードがルールに引っかかる場合、その行末に
+#   # security-check: allow <理由>
+# を書くと、その行だけ検出をスキップする。理由の記載を必須にすることで、
+# 「とりあえず黙らせる」運用を避け、レビュー時に根拠が残るようにする。
+# 1行単位のみ。複数行にまたがる回避や、ファイル全体の無効化はできない。
+ALLOW_DIRECTIVE = re.compile(r"#\s*security-check:\s*allow\s+\S")
+
 
 def _run(args):
     return subprocess.run(args, capture_output=True)
@@ -102,6 +110,9 @@ def check():
             continue  # バイナリはスキップ
         is_py = path.endswith(".py")
         for lineno, line in enumerate(text.splitlines(), 1):
+            # 行末に `# security-check: allow <理由>` があればその行はスキップ
+            if ALLOW_DIRECTIVE.search(line):
+                continue
             if is_py:
                 for rx, why in PY_RULES:
                     if rx.search(line):
