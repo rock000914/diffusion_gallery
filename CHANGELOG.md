@@ -8,15 +8,20 @@ PNG/画像メタデータビューア (PySide6版) — 更新履歴
 
 ### 追加（モデル系統の大幅拡充）
 - **対応系統を 17 系統へ拡張**: `sd / sdxl(xl) / pony / illustrious / noobai / flux / klein / krea / qwen / lumina / anima / minimax / wan / zit / ernie / pid / moss` を系統ドロップダウン・バッジ・フィルタで判別可能に。`BASE_MODEL_GROUPS` と `LINEAGE_BADGES` に対応 ID・略称・色を追加 [png_viewer.py:1069-1160](file:///N:/マイドライブ/png_viwer/png_viewer.py#L1069-L1160)。
-- **`classify_base_model()` を優先順位付きキーワード表へ書き換え** [png_viewer.py:1082-1160](file:///N:/マイドライブ/png_viwer/png_viewer.py#L1082-L1160)。個別モデル名を列挙せず、ベースモデルの語（モデル名）で系統を判定する `_LINEAGE_NAME_RULES`（先勝ち順）。新系統は表に1行追加するだけ。
+- **`classify_base_model()` を優先順位付きキーワード表へ書き換え** [png_viewer.py:1097-1149](file:///N:/マイドライブ/png_viwer/png_viewer.py#L1097-L1149)。個別モデル名を列挙せず、ベースモデルの語（モデル名）で系統を判定する `_LINEAGE_NAME_RULES`（先勝ち順）。新系統は表に1行追加するだけ。
 - **短語・多義語の誤爆防止**: 既定は部分一致だが、`anima→animal` / `xl→excellent` / `wan→swan` / `pid→rapid` / `moss→mossy` などを招く語（`sd xl zit pid moss wan2 anima 1.5 14`）は `_LINEAGE_BOUND_TOKENS` で**単語境界照合**に切替。`sdxl` は `xl` より先に評価し SD への誤爆を防止。複合（`sd-xl`/`sd_xl`）、`z-image`/`zimage`、`wan2.1/2.2` にも対応。
 
 ### 修正（Anima 生成環境指紋）
-- **リネーム済み Anima 派生が「その他(etc)」になる**: `nova3DCGAM_v20` のように名前に "anima" を含まない Anima 派生（Civitai 上の Nova 3DCG AM 等）が `other` → バッジ "etc" に落ちていた。名前で系統が決まらない場合のみ、Anima が Forge Neo / ComfyUI で使う **Qwen3-0.6B TE（`qwen_3_06b`）** を生メタから補完判定 [png_viewer.py:1082-1113](file:///N:/マイドライブ/png_viwer/png_viewer.py#L1082-L1113)。純正 Qwen-Image は別 TE のため `qwen` と混同しない。プロンプト本文からの語検索は誤爆のため行わない（`qwen_3_06b` は模块名由来で本文に現れない）。
-- **全経路で raw を参照**: バッジ描画 `_apply_badge` [png_viewer.py:4240-4241](file:///N:/マイドライブ/png_viwer/png_viewer.py#L4240-L4241)、系統フィルタ `FilterWorker` [png_viewer.py:3486-3492](file:///N:/マイドライブ/png_viwer/png_viewer.py#L3486-L3492)、系統ドロップダウン構築 `_refresh_base_model_filter` の3経路を `classify_base_model(name, raw)` へ統一。`ModelListWorker` は生メタ込みで系統集合を算出し `finished(list, list)`（モデル名一覧＋系統一覧）として emit [png_viewer.py:3558-3591](file:///N:/マイドライブ/png_viwer/png_viewer.py#L3558-L3591) し、名称のみの旧呼び出しは `classify_base_model(name)` へフォールバック（後方互換）。
+- **リネーム済み Anima 派生が「その他(etc)」になる**: `nova3DCGAM_v20` のように名前に "anima" を含まない Anima 派生（Civitai 上の Nova 3DCG AM 等）が `other` → バッジ "etc" に落ちていた。名前で系統が決まらない場合のみ、Anima が Forge Neo / ComfyUI で使う **Qwen3-0.6B TE（`qwen_3_06b`）** を生メタから補完判定 [png_viewer.py:1146-1149](file:///N:/マイドライブ/png_viwer/png_viewer.py#L1146-L1149)。純正 Qwen-Image は別 TE のため `qwen` と混同しない。プロンプト本文からの語検索は誤爆のため行わない（`qwen_3_06b` は模块名由来で本文に現れない）。
+- **系統算出をワーカーへ移譲**: `ModelListWorker` は生メタ込みで系統集合と モデル名→系統 対応表を算出し `finished(list, list, dict)`（モデル名一覧＋系統一覧＋対応表）として emit [png_viewer.py:3645-3672](file:///N:/マイドライブ/png_viwer/png_viewer.py#L3645-L3672)。名称だけ渡された後方互換呼び出しは `resolve_lineage(name)` へフォールバック。
+
+### 追加（モデル名→系統の永続レジストリ）
+- **`model_lineage` 対応表**: 自動判定で割れない／誤爆するモデルを一度覚えると次回以降も再現する仕組み。`settings.json` の `"model_lineage": {"<モデル名>": "<系統ID>"}` に保存し、同ファイルを直接編集して手動で追加/修正/削除できる。モジュール関数 `set_lineage_overrides()/get_lineage_overrides()/resolve_lineage()` を追加 [png_viewer.py:1174-1204](file:///N:/マイドライブ/png_viwer/png_viewer.py#L1174-L1204)。
+- **判定の単入口 `resolve_lineage(name, raw)`**: 保存対応を最優先に引き、無ければ `classify_base_model()` にフォールバック。バッジ・系統フィルタ・モデルフィルタ・系統ドロップダウンの全経路を `classify_base_model` → `resolve_lineage` に統一し、1つのモデル名の系統がどの画面でも一致する（=「モデルで絞り込んでも反映される」）[png_viewer.py:3561](file:///N:/マイドライブ/png_viwer/png_viewer.py#L3561) / [png_viewer.py:3664](file:///N:/マイドライブ/png_viwer/png_viewer.py#L3664) / [png_viewer.py:4320](file:///N:/マイドライブ/png_viwer/png_viewer.py#L4320)。
+- **自動保存の方針**: `ModelListWorker` が モデル名→系統 の対応表も emit（`finished(list, list, dict)`）し、`_persist_lineage_overrides()` が settings へマージ。既存キー（手動編集の可能性）は上書きせず、`other`（未分類）は保存しない（将来の判定改善で再評価される余地を残す）。変更時だけ `save_cfg` + バッジ再描画 [png_viewer.py:11038-11066](file:///N:/マイドライブ/png_viwer/png_viewer.py#L11038-L11066)。起動時は MainWindow で `set_lineage_overrides(cfg["model_lineage"])` を復元 [png_viewer.py:8487](file:///N:/マイドライブ/png_viwer/png_viewer.py#L8487)。
 
 ### 検証
-- `.tmp/smoke_v236.py`（31 check）: 17 系統それぞれの名称→系統、`sdxl` が `xl`/`sd` より優先、単語境界ガード（swan/rapid/animal/excellent/mossy 等で誤爆しない）、実画像相当 raw→anima・名称のみ→other、pony が指紋より優先、`GROUP` と `BADGE` のキー一致。実 PNG `00159-2971785256.png` の end-to-end 判別 = `anima`。既存 smoke（v2.33〜v2.35.2）も回帰 PASS。
+- `.tmp/smoke_v236.py`（45 check）: 17 系統それぞれの名称→系統、`sdxl` が `xl`/`sd` より優先、単語境界ガード（swan/rapid/animal/excellent/mossy 等で誤爆しない）、実画像相当 raw→anima・名称のみ→other、pony が指紋より優先、`GROUP` と `BADGE` のキー一致。レジストリは保存対応が自動を上書き／不正系統IDは除外／`other` 非保存／既存キー非上書き／新規のみ追加／変更時だけ再描画。実 PNG `00159-2971785256.png` の end-to-end 判別 = `anima`（手動 override で `other` に変更可）。既存 smoke（v2.33〜v2.35.2）も回帰 PASS。
 
 ---
 

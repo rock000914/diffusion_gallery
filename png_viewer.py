@@ -1171,6 +1171,37 @@ LINEAGE_BADGES = {
     "other":       ("etc", "#7f8c8d"),
 }
 
+# ── モデル名→系統 レジストリ（settings.json の model_lineage に永続化）─────────
+# [v2.36] 自動判定（classify_base_model）を補完/上書きする永続テーブル。
+# 目的: nova3DCGAM 等の「名前だけでは系統が割れない/誤判定される」モデルを、一度
+# 覚えた対応をモデル名キーで保存し、次回以降もバッジ・系統フィルタ・モデルフィルタの
+# 全経路で共有する。settings.json の "model_lineage": {"<モデル名>": "<系統ID>"} を
+# 直接編集すれば手動で追加/修正/削除できる（キーは無視、値は上の系統ID）。
+_LINEAGE_KEYS = {k for k, _ in BASE_MODEL_GROUPS if k}   # ""(全て) は不可
+_MODEL_LINEAGE_OVERRIDES: dict = {}
+
+def set_lineage_overrides(mapping) -> None:
+    """モデル名→系統 の上書きテーブルを丸ごと差し替える（起動時/スキャン後に呼ぶ）。
+    不正な系統IDの値は除外する。"""
+    global _MODEL_LINEAGE_OVERRIDES
+    clean = {}
+    if isinstance(mapping, dict):
+        for k, v in mapping.items():
+            if isinstance(k, str) and isinstance(v, str) and v in _LINEAGE_KEYS:
+                clean[k] = v
+    _MODEL_LINEAGE_OVERRIDES = clean   # 丸ごと差し替えで読取側をアトミックに保つ
+
+def get_lineage_overrides() -> dict:
+    return dict(_MODEL_LINEAGE_OVERRIDES)
+
+def resolve_lineage(model: str, raw: str = "") -> str:
+    """系統判定の単一の入口。まず保存済みテーブル（手動編集を最優先）を引き、
+    無ければ自動判定 classify_base_model() にフォールバックする。"""
+    ov = _MODEL_LINEAGE_OVERRIDES.get(model)
+    if ov:
+        return ov
+    return classify_base_model(model, raw)
+
 
 def get_default_image_folder() -> str:
     """Return a reasonable startup folder without leaking local machine paths."""
@@ -3527,7 +3558,7 @@ class FilterWorker(QThread):
                         continue
                 if mq and m.get("model") != mq: continue
                 if bq:
-                    _bk = classify_base_model(m.get("model", ""), m.get("raw", ""))
+                    _bk = resolve_lineage(m.get("model", ""), m.get("raw", ""))
                     if bq == "other":
                         if _bk != "other":
                             continue
@@ -3611,7 +3642,7 @@ class TagCountWorker(QThread):
 
 class ModelListWorker(QThread):
     """モデルリスト集計スレッド（安定したQThreadサブクラス）"""
-    finished = Signal(list, list)
+    finished = Signal(list, list, dict)
 
     def __init__(self, all_paths: list, meta_snap: dict, parent=None):
         super().__init__(parent)
@@ -3624,15 +3655,20 @@ class ModelListWorker(QThread):
     def run(self):
         models = set()
         lineages = set()
+        name2lineage = {}     # モデル名 → 系統（resolve 済み＝保存対応も反映）
         for p in self._paths:
             if self._cancelled: return
             m = self._meta.get(p)
             if not m: continue
             if m.get("model"): models.add(m["model"])
-            lk = classify_base_model(m.get("model", ""), m.get("raw", ""))
-            if lk: lineages.add(lk)
+            lk = resolve_lineage(m.get("model", ""), m.get("raw", ""))
+            if lk:
+                lineages.add(lk)
+                nm = m.get("model", "")
+                if nm:
+                    name2lineage.setdefault(nm, lk)
         if not self._cancelled:
-            self.finished.emit(sorted(models), sorted(lineages))
+            self.finished.emit(sorted(models), sorted(lineages), name2lineage)
 
 
 class DuplicateDetectWorker(QThread):
@@ -4281,7 +4317,7 @@ class VirtualGrid(QWidget):
     def _apply_badge(self, cell):
         """セルの系統バッジを META キャッシュから設定する（I/O なし peek 使用）。"""
         meta = META.peek(cell.path) or {}
-        key = classify_base_model(meta.get("model", ""), meta.get("raw", ""))
+        key = resolve_lineage(meta.get("model", ""), meta.get("raw", ""))
         text, bg = LINEAGE_BADGES.get(key, ("", None))
         cell.set_lineage_badge(text, bg)
 
@@ -8448,6 +8484,7 @@ class MainWindow(QMainWindow):
         self.resize(1400, 900)
 
         self._cfg = load_cfg()
+        set_lineage_overrides(self._cfg.get("model_lineage") or {})   # [v2.36] 保存済み系統対応を復元
         _logo_cfg = str(self._cfg.get("logo_folder", "") or "").strip()
         set_logo_dir(_logo_cfg or get_logo_dir())
         self._cfg["logo_folder"] = str(get_logo_dir())
@@ -10976,10 +11013,12 @@ class MainWindow(QMainWindow):
         self._model_worker = ModelListWorker(self._all_paths, meta_snap)
         worker_ref = self._model_worker
         self._model_worker.finished.connect(
-            lambda models, lineages, ref=worker_ref: self._on_model_list_done_guarded(models, lineages, ref))
+            lambda models, lineages, mapping, ref=worker_ref:
+                self._on_model_list_done_guarded(models, lineages, mapping, ref))
         self._model_worker.start()
 
-    def _on_model_list_done_guarded(self, models: list, lineages: list, worker_ref):
+    def _on_model_list_done_guarded(self, models: list, lineages: list,
+                                    mapping: dict, worker_ref):
         if worker_ref is not self._model_worker:
             return
         cur = self._model_cb.currentText()
@@ -10991,17 +11030,46 @@ class MainWindow(QMainWindow):
         self._model_cb.setCurrentIndex(idx if idx >= 0 else -1)   # -1 = 未選択（placeholder 表示）
         self._model_cb.blockSignals(False)
         self._refresh_base_model_filter(models, lineages)
+        self._persist_lineage_overrides(mapping)
         if (cur != self._model_cb.currentText()
                 or base != (self._base_model_cb.currentData() or "")):
             self._filter_timer.start()
+
+    def _persist_lineage_overrides(self, name2lineage: dict) -> None:
+        """スキャンで得た モデル名→系統 を settings.json へ自動保存する。
+        - 既に登録済み（＝手動編集の可能性）のモデル名は上書きしない。
+        - other（未分類）は保存しない＝将来の判定改善で再評価される余地を残す。
+        変更があれば内存のレジストリを再ロードし、全バッジへ反映する。"""
+        if not name2lineage:
+            return
+        table = self._cfg.get("model_lineage")
+        if not isinstance(table, dict):
+            table = {}
+        changed = False
+        for name, lin in name2lineage.items():
+            if lin and lin != "other" and name not in table:
+                table[name] = lin
+                changed = True
+        if not changed:
+            return
+        self._cfg["model_lineage"] = table
+        set_lineage_overrides(table)        # 内存レジストリ更新（読取側は原子的に差替）
+        try:
+            save_cfg(self._cfg)
+        except Exception:
+            pass
+        try:
+            self._refresh_cell_badges()     # バッジへ即反映
+        except Exception:
+            pass
 
     def _refresh_base_model_filter(self, models: list, lineages: list | None = None):
         """実在する系統だけを拾って系統ドロップダウンを再構築する。
         未使用の系統（例: Flux）は表示しない。
         [v2.36] lineages（生メタ指紋込みで Worker が算出した系統集合）を優先使用。
-        名称だけ渡された後方互換呼び出しでは classify_base_model(name) にフォールバック。"""
+        名称だけ渡された後方互換呼び出しでは resolve_lineage(name) にフォールバック。"""
         present = set(lineages) if lineages is not None else {
-            classify_base_model(name) for name in models}
+            resolve_lineage(name) for name in models}
         present.discard("")
         current = self._base_model_cb.currentData() or ""
         self._base_model_cb.blockSignals(True)
