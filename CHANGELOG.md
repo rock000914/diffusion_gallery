@@ -4,6 +4,19 @@ PNG/画像メタデータビューア (PySide6版) — 更新履歴
 
 ---
 
+## [v2.32.3] 2026-11-21
+
+### バグ修正
+- **🔊 音量・速度ポップアップが最大化画面の右端で画面外にはみ出し、スライダーのノブ・速度スピン・ヒントが切れて見えない**問題を修正（ユーザー添付の 2560x1440 スクリーンショットで確認: ポップアップが右画面外へ約 245px はみ出し、`※ ホットキー:[] = BGM` までで途切れていた）。
+  - `_open_volume_popup`: ポップアップ表示前に `ensurePolished()` + `adjustSize()` でサイズを確定し、`_build_adv_search_popup` と同じ画面クランプ（右/下へみだしたら画面内に寄せる、下余白が無ければ上へ出す）を追加 [png_viewer.py:5592-5620](file:///N:/マイドライブ/png_viwer/png_viewer.py#L5592-L5620)。`btn.screen()` を使うのでマルチモニタでもポップアップが属すべき画面内に収まる。
+  - `_build_volume_popup`: 幅を 360 → 440px に拡大 [png_viewer.py:5627](file:///N:/マイドライブ/png_viwer/png_viewer.py#L5627)。ヒントラベルに `setWordWrap(True)` を追加 [png_viewer.py:5683](file:///N:/マイドライブ/png_viwer/png_viewer.py#L5683)（英語訳 `※ Hotkeys: [ ] = BGM ±5%, { } = voice ±5%` が日本語原文より長く、固定幅だと末尾が切れるため）。
+
+### 検証
+- `.tmp/smoke_v232_3.py`: `windows` 実機で 🔊 ボタンを右端付近へ寄せポップアップを開き、`popup.geometry()` の 4 辺がボタン所在画面の `availableGeometry()` 内に収まることを確認。修正前: `x=-360`（画面外）で FAIL、修正後: `x=1442, w=440` で `POPUP_CLAMP_OK`。
+- 既存 `.tmp/smoke_v232.py` / `.tmp/smoke_v232_2.py` も引き続き PASS。
+
+---
+
 ## [v2.32.2] 2026-11-21
 
 ### バグ修正

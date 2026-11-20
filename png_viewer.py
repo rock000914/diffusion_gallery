@@ -209,7 +209,7 @@ except ImportError:
 # ══════════════════════════════════════════════════════════════════════════════
 #  定数・設定
 # ══════════════════════════════════════════════════════════════════════════════
-APP_VERSION  = "v2.32.2"
+APP_VERSION  = "v2.32.3"
 APP_NAME     = "PNG Metadata Viewer"
 APP_AUTHOR   = "nemot"
 _APP_ICON_B64 = (
@@ -5600,17 +5600,31 @@ class FullViewer(QDialog):
         self._pop_voice_vol.setValue(int(self._audio_cfg("ss_voice_volume", 100)))
         self._pop_bgm_speed.setValue(float(self._audio_cfg("ss_bgm_speed", 1.0)))
         self._pop_voice_speed.setValue(float(self._audio_cfg("ss_voice_speed", 1.0)))
+        # [v2.32.3] 位置決定前にサイズを確定させ、画面右/下へのはみ出しをクランプ。
+        # 🔊 ボタンはツールバー右端にあるため、無補正だとポップアップが画面外に
+        # 逃げ、スライダーのノブや速度スピンが見えなかった（v2.32 のバグ）。
+        popup = self._vol_popup
+        popup.ensurePolished()
+        popup.adjustSize()
+        w = max(popup.width(), popup.sizeHint().width())
+        h = max(popup.height(), popup.sizeHint().height())
         btn = self._vol_btn
-        self._vol_popup.move(btn.mapToGlobal(QPoint(0, btn.height())))
-        self._vol_popup.show()
-        self._vol_popup.raise_()
+        base = btn.mapToGlobal(QPoint(0, btn.height()))
+        screen = (btn.screen() or QApplication.primaryScreen()).availableGeometry()
+        x = min(max(base.x(), screen.left()), max(screen.left(), screen.right() - w + 1))
+        y = base.y()
+        if y + h > screen.bottom():
+            y = max(screen.top(), base.y() - h - btn.height() - 6)
+        popup.move(x, y)
+        popup.show()
+        popup.raise_()
 
     def _build_volume_popup(self):
         """音量・速度調整用 Qt.Popup。既存の _build_adv_search_popup と同じパターン。"""
         popup = QFrame(self)
         popup.setWindowFlags(Qt.WindowType.Popup)
         popup.setObjectName("vol_popup")
-        popup.setMinimumWidth(360)
+        popup.setMinimumWidth(440)
         popup.setStyleSheet(
             f"QFrame#vol_popup{{background:{PAL['bg1']};"
             f"border:1px solid {PAL['border']};border-radius:6px;}}"
@@ -5665,6 +5679,8 @@ class FullViewer(QDialog):
 
         hint = QLabel(T("※ ホットキー: [ ] = BGM ±5%, { } = 音声 ±5%"))
         hint.setStyleSheet(f"color:{PAL['fg3']};font-size:8pt;")
+        # [v2.32.3] 英語訳が最も長く、固定幅では末尾が切れる。折り返しを許可。
+        hint.setWordWrap(True)
         root.addWidget(hint)
 
         self._vol_popup = popup
