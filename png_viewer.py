@@ -210,7 +210,7 @@ except ImportError:
 # ══════════════════════════════════════════════════════════════════════════════
 #  定数・設定
 # ══════════════════════════════════════════════════════════════════════════════
-APP_VERSION  = "v2.35"
+APP_VERSION  = "v2.35.1"
 APP_NAME     = "PNG Metadata Viewer"
 APP_AUTHOR   = "nemot"
 _APP_ICON_B64 = (
@@ -5426,6 +5426,14 @@ class FullViewer(QDialog):
             self._fx_item.setPos(0, 0)
             self._fx_item.setPixmap(scaled)
             self._fx_item.show()
+            if kind in ("slide_lr", "slide_ud"):
+                # [v2.35 FIX] 新画像を旧画像の上に重ね、方向ワイプで完全に覆す。
+                # 旧画像を動かして置き去りにすると残骸として見えるため動かさない。
+                self._fx_item.setZValue(5)
+                self._pix_item.setZValue(10)
+            else:
+                self._fx_item.setZValue(10)
+                self._pix_item.setZValue(0)
             # ズーム・パルス用に回転中心を画像中央へ
             self._pix_item.setTransformOriginPoint(QPointF(w / 2.0, h / 2.0))
         self._anim_state = state
@@ -5448,12 +5456,9 @@ class FullViewer(QDialog):
             if fx is not None:
                 fx.setOpacity(1.0 - e)
         elif kind == "slide_lr":
-            if fx is not None:
-                fx.setPos(-w * e, 0)
+            # 旧画像は中央に固定（上から新画像が横スライドで覆う）
             self._pix_item.setPos(w * (1.0 - e), 0)
         elif kind == "slide_ud":
-            if fx is not None:
-                fx.setPos(0, -h * e)
             self._pix_item.setPos(0, h * (1.0 - e))
         elif kind == "zoom":
             self._pix_item.setScale(1.25 - 0.25 * e)
