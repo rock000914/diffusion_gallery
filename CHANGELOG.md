@@ -4,6 +4,21 @@ PNG/画像メタデータビューア (PySide6版) — 更新履歴
 
 ---
 
+## [v2.38.3] 2026-11-21
+
+### バグ修正（スライドショー開始の2秒待ち／環境設定から BGM 速度が音声に効かない）
+- **症状**: ①▶ SS を押しても約2秒してから動き始める。②環境設定で BGM の再生速度を変えるとスライドの間隔だけ変わり、音楽のテンポが旧速度のまま（「速度調整が効かない」）。
+- **①原因**: `_kick_beat_detect` が検出 worker 生存時に `self._beat_worker.wait(3000)` で **UI スレッドを同期ブロック**していた（[png_viewer.py:6287](file:///N:/マイドライブ/png_viwer/png_viewer.py#L6287)）。前の SS の librosa 検出が残っていると ▶ が最大3秒止まる。
+- **①非同期化**: 同一曲の検出が進行中なら張り替えず完了を待ち、別曲に変わった場合のみ旧 worker を `cancel()` + `finished→deleteLater` して**待たずに**新 worker を起動。`wait(3000)` を削除し UI ブロックを解消。結果は既存の `_on_beat_detected` の path ガードで古いものを破棄するため正しさは維持。
+- **②原因**: `_ensure_audio_players` は音量・速度を **初回のみ**プレイヤーへ適用（`_audio_ready` ガード）。設定ダイアログ確定後は `fv._resync_ss()` だけでスライド間隔は新速度になるが、`_bgm_player.setPlaybackRate()` を再適用しておらず音声テンポが古いままだった。
+- **② `apply_audio_settings()` 追加**: 実行中プレイヤーへ設定の音量/速度を再適用するメソッドを新設（[png_viewer.py:5900](file:///N:/マイドライブ/png_viwer/png_viewer.py#L5900)）。MainWindow の設定確定処理で `fv._resync_ss()` の前に呼び（[png_viewer.py:13113](file:///N:/マイドライブ/png_viwer/png_viewer.py#L13113)）、音声テンポもスライド間隔も即反映。🔊 ポップアップの `_set_speed` は従来どおり即時適用。
+- `APP_VERSION` を v2.38.2 → **v2.38.3**。
+
+### 検証
+- `.tmp/smoke_v238_3.py`: `_kick_beat_detect` が `wait(3000)` を持たない／同一曲 worker 生存中は再 spawn しない／`apply_audio_settings` が `_audio_ready` 時のみ `setPlaybackRate(cfg)` を呼ぶ／MainWindow 確定処理が `apply_audio_settings()` を `_resync_ss()` より前に呼ぶ。既存 smoke（v2.38.1/v2.38.2）も回帰 PASS。`py_compile` OK。
+
+---
+
 ## [v2.38.2] 2026-11-21
 
 ### 新機能（ボイス音量を 100% 超に増幅）

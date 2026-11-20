@@ -224,7 +224,7 @@ except Exception:
 # ══════════════════════════════════════════════════════════════════════════════
 #  定数・設定
 # ══════════════════════════════════════════════════════════════════════════════
-APP_VERSION  = "v2.38.2"
+APP_VERSION  = "v2.38.3"
 APP_NAME     = "Diffusion Gallery"
 VOLUME_MAX   = 400   # voice 音量スライダー上限(%)。100超は再生前 PCM 増幅(temp)で実現
 APP_AUTHOR   = "nemot"
@@ -5898,6 +5898,28 @@ class FullViewer(QDialog):
             pass
         self._audio_ready = True
 
+    def apply_audio_settings(self):
+        """[v2.38.3] 環境設定で音量/速度を変えた際、実行中プレイヤーへ再適用。
+        _ensure_audio_players は初回のみ適用するため、この再適用がないと
+        設定ダイアログからの速度変更が音声テンポに反映されない。"""
+        if not self._audio_ready:
+            return
+        if self._bgm_output is not None:
+            self._bgm_output.setVolume(
+                max(0.0, min(1.0, self._audio_cfg("ss_bgm_volume", 80) / 100.0)))
+        if self._voice_output is not None:
+            self._voice_output.setVolume(
+                max(0.0, min(1.0, self._audio_cfg("ss_voice_volume", 100) / 100.0)))
+        try:
+            if self._bgm_player is not None:
+                self._bgm_player.setPlaybackRate(
+                    float(self._audio_cfg("ss_bgm_speed", 1.0)))
+            if self._voice_player is not None:
+                self._voice_player.setPlaybackRate(
+                    float(self._audio_cfg("ss_voice_speed", 1.0)))
+        except Exception:
+            pass
+
     def _on_bgm_status(self, status):
         if status == QMediaPlayer.MediaStatus.EndOfMedia:
             self._play_bgm_current(advance=True)
@@ -6289,9 +6311,15 @@ class FullViewer(QDialog):
         if not HAS_LIBROSA or not self._bgm_queue or self._bgm_player is None:
             return
         path = self._bgm_queue[self._bgm_idx]
-        if self._beat_worker is not None and self._beat_worker.isRunning():
-            self._beat_worker.cancel()
-            self._beat_worker.wait(3000)
+        w0 = self._beat_worker
+        if w0 is not None and w0.isRunning():
+            if getattr(w0, "_path", None) == path:
+                # 同じ曲の検出が進行中 → 張り替えず完了を待つ（UI を止めない）
+                return
+            # 別曲に変わった → 旧 worker は cancel + 終了後自動破棄。待たずに進める。
+            w0.cancel()
+            w0.finished.connect(w0.deleteLater)
+            self._beat_worker = None
         self._beat_times = []
         self._beat_slide_times = []
         w = _BeatDetectWorker(path, self)
@@ -13113,6 +13141,7 @@ class MainWindow(QMainWindow):
             fv = getattr(self, "_full_viewer", None)
             if fv is not None and fv.isVisible():
                 try:
+                    fv.apply_audio_settings()
                     fv._resync_ss()
                 except Exception:
                     pass
