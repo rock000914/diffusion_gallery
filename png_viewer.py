@@ -210,7 +210,7 @@ except ImportError:
 # ══════════════════════════════════════════════════════════════════════════════
 #  定数・設定
 # ══════════════════════════════════════════════════════════════════════════════
-APP_VERSION  = "v2.35.3"
+APP_VERSION  = "v2.36"
 APP_NAME     = "PNG Metadata Viewer"
 APP_AUTHOR   = "nemot"
 _APP_ICON_B64 = (
@@ -1079,9 +1079,15 @@ BASE_MODEL_GROUPS = [
     ("other",       T("その他")),
 ]
 
-def classify_base_model(model: str) -> str:
-    """モデル名から系統IDを判定する。空文字は空を返す。
-    判定順序が優先度になる（例: smoothMixNoobai_ponyV3 → pony）。
+def classify_base_model(model: str, raw: str = "") -> str:
+    """モデル名（必要なら生メタの生成環境指紋）から系統IDを判定する。
+    空文字は空を返す。判定順序が優先度になる（例: smoothMixNoobai_ponyV3 → pony）。
+    [v2.36] 名称に "anima" を含まないリネーム済み Anima 派生（nova3DCGAM 等）は、
+    名称だけでは "other" に落ちる。Forge Neo / ComfyUI の Anima はテキストエンコーダに
+    Qwen3-0.6B（qwen_3_06b）を使うため、これを生成環境指紋として補完判定する。
+    純正 Qwen-Image は別の TE を使うので "qwen" とは混同しない。
+    ※ 生メタ全体から "anima" を素探しすると "animal" 等で誤爆するため、
+      モジュール名の精密照合のみを用いる（プロンプト本文は検索しない）。
     """
     n = (model or "").lower()
     if not n.strip():
@@ -1102,6 +1108,10 @@ def classify_base_model(model: str) -> str:
         return "flux"
     if "sdxl" in n or "sd-xl" in n or "sd_xl" in n or "stable-diffusion-xl" in n:
         return "sdxl"
+    r = (raw or "").lower()
+    if ("qwen_3_06b" in r or "qwen3_06b" in r
+            or "qwen_3_0_6b" in r or "qwen3-0.6b" in r):
+        return "anima"
     return "other"
 
 # ── 系統バッジ（サムネイルのファイル名左に表示）─────────────────────────────
@@ -3474,10 +3484,11 @@ class FilterWorker(QThread):
                         continue
                 if mq and m.get("model") != mq: continue
                 if bq:
+                    _bk = classify_base_model(m.get("model", ""), m.get("raw", ""))
                     if bq == "other":
-                        if classify_base_model(m.get("model", "")) != "other":
+                        if _bk != "other":
                             continue
-                    elif classify_base_model(m.get("model", "")) != bq:
+                    elif _bk != bq:
                         continue
                 if sq and sq not in str(m.get("seed", "")).strip(): continue
                 if rf != "all":
@@ -3557,7 +3568,7 @@ class TagCountWorker(QThread):
 
 class ModelListWorker(QThread):
     """モデルリスト集計スレッド（安定したQThreadサブクラス）"""
-    finished = Signal(list)
+    finished = Signal(list, list)
 
     def __init__(self, all_paths: list, meta_snap: dict, parent=None):
         super().__init__(parent)
@@ -3569,12 +3580,16 @@ class ModelListWorker(QThread):
 
     def run(self):
         models = set()
+        lineages = set()
         for p in self._paths:
             if self._cancelled: return
             m = self._meta.get(p)
-            if m and m.get("model"): models.add(m["model"])
+            if not m: continue
+            if m.get("model"): models.add(m["model"])
+            lk = classify_base_model(m.get("model", ""), m.get("raw", ""))
+            if lk: lineages.add(lk)
         if not self._cancelled:
-            self.finished.emit(sorted(models))
+            self.finished.emit(sorted(models), sorted(lineages))
 
 
 class DuplicateDetectWorker(QThread):
@@ -4223,7 +4238,7 @@ class VirtualGrid(QWidget):
     def _apply_badge(self, cell):
         """セルの系統バッジを META キャッシュから設定する（I/O なし peek 使用）。"""
         meta = META.peek(cell.path) or {}
-        key = classify_base_model(meta.get("model", ""))
+        key = classify_base_model(meta.get("model", ""), meta.get("raw", ""))
         text, bg = LINEAGE_BADGES.get(key, ("", None))
         cell.set_lineage_badge(text, bg)
 
@@ -10918,10 +10933,10 @@ class MainWindow(QMainWindow):
         self._model_worker = ModelListWorker(self._all_paths, meta_snap)
         worker_ref = self._model_worker
         self._model_worker.finished.connect(
-            lambda models, ref=worker_ref: self._on_model_list_done_guarded(models, ref))
+            lambda models, lineages, ref=worker_ref: self._on_model_list_done_guarded(models, lineages, ref))
         self._model_worker.start()
 
-    def _on_model_list_done_guarded(self, models: list, worker_ref):
+    def _on_model_list_done_guarded(self, models: list, lineages: list, worker_ref):
         if worker_ref is not self._model_worker:
             return
         cur = self._model_cb.currentText()
@@ -10932,19 +10947,19 @@ class MainWindow(QMainWindow):
         idx = self._model_cb.findText(cur)
         self._model_cb.setCurrentIndex(idx if idx >= 0 else -1)   # -1 = 未選択（placeholder 表示）
         self._model_cb.blockSignals(False)
-        self._refresh_base_model_filter(models)
+        self._refresh_base_model_filter(models, lineages)
         if (cur != self._model_cb.currentText()
                 or base != (self._base_model_cb.currentData() or "")):
             self._filter_timer.start()
 
-    def _refresh_base_model_filter(self, models: list):
+    def _refresh_base_model_filter(self, models: list, lineages: list | None = None):
         """実在する系統だけを拾って系統ドロップダウンを再構築する。
-        未使用の系統（例: Flux）は表示しない。"""
-        present = set()
-        for name in models:
-            key = classify_base_model(name)
-            if key:
-                present.add(key)
+        未使用の系統（例: Flux）は表示しない。
+        [v2.36] lineages（生メタ指紋込みで Worker が算出した系統集合）を優先使用。
+        名称だけ渡された後方互換呼び出しでは classify_base_model(name) にフォールバック。"""
+        present = set(lineages) if lineages is not None else {
+            classify_base_model(name) for name in models}
+        present.discard("")
         current = self._base_model_cb.currentData() or ""
         self._base_model_cb.blockSignals(True)
         self._base_model_cb.clear()

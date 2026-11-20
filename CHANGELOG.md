@@ -4,6 +4,17 @@ PNG/画像メタデータビューア (PySide6版) — 更新履歴
 
 ---
 
+## [v2.36] 2026-11-21
+
+### 修正（モデル系統判別の強化）
+- **リネーム済み Anima 派生が「その他(etc)」になる**: `nova3DCGAM_v20` のようにモデル名へ "anima" を含まない Anima 派生（Civitai 上の Nova 3DCG AM 等）が系統判定で `other` → バッジ "etc" に落ちていた。`classify_base_model()` に生成環境の指紋照合を追加 [png_viewer.py:1082-1113](file:///N:/マイドライブ/png_viwer/png_viewer.py#L1082-L1113)。Anima は Forge Neo / ComfyUI でテキストエンコーダに **Qwen3-0.6B（`qwen_3_06b`）** を使うため、名称で系統が決まらない画像の生メタに该当即文字があれば `anima` と補完する。純正 Qwen-Image は別 TE のため `qwen` と混同しない。`"anima"` をプロンプト本文から素探しすると "animal" 等で誤爆するため、モジュール名の精密照合のみ采用（本文は検索しない）。
+- **全経路で raw を参照**: バッジ描画 `_apply_badge` [png_viewer.py:4226](file:///N:/マイドライブ/png_viwer/png_viewer.py#L4226)、系統フィルタ `FilterWorker` [png_viewer.py:3476-3482](file:///N:/マイドライブ/png_viwer/png_viewer.py#L3476-L3482)、系統ドロップダウン構築 `_refresh_base_model_filter` の3経路を `classify_base_model(name, raw)` 呼び出しへ統一。`ModelListWorker` は生メタ込みで系統集合を算出し `finished(list, list)`（モデル名一覧＋系統一覧）として emit [png_viewer.py:3558-3579](file:///N:/マイドライブ/png_viwer/png_viewer.py#L3558-L3579) し、名称のみの旧呼び出しは `classify_base_model(name)` へフォールバック（後方互換）。
+
+### 検証
+- `.tmp/smoke_v236.py`: 実画像相当 raw → anima、名称のみ → other（従来維持）、"animal" 本文で誤爆しない、純正 Qwen は qwen 維持、既存系統（pony 等）が指紋より優先、`qwen3-0.6b`/`qwen3_06b` 変種も anima。実 PNG `00159-2971785256.png` の end-to-end 判別 = `anima`。既存 smoke（v2.33〜v2.35.2）も回帰 PASS。
+
+---
+
 ## [v2.35.3] 2026-11-21
 
 ### 新機能（パルス拍数）
