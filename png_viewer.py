@@ -146,6 +146,7 @@ Ctrl+ホイールでしか変えられなかった）。右カラム端にもフ
 import sys, os, re, json, struct, zlib, shutil, hashlib, threading, pickle, time
 import subprocess
 import random, webbrowser, csv, concurrent.futures
+import math
 from pathlib import Path
 from datetime import datetime, timedelta
 from collections import Counter, OrderedDict
@@ -169,7 +170,7 @@ from PySide6.QtGui import (
     QPalette, QCursor, QKeySequence, QAction,
     QStandardItemModel, QStandardItem,
     QTransform, QBrush, QPen, QLinearGradient,
-    QDrag, QImageReader,
+    QDrag, QImageReader, QPainterPath,
 )
 from PySide6.QtWidgets import QFileSystemModel
 from PySide6.QtCore import (
@@ -209,7 +210,7 @@ except ImportError:
 # ══════════════════════════════════════════════════════════════════════════════
 #  定数・設定
 # ══════════════════════════════════════════════════════════════════════════════
-APP_VERSION  = "v2.34.1"
+APP_VERSION  = "v2.35"
 APP_NAME     = "PNG Metadata Viewer"
 APP_AUTHOR   = "nemot"
 _APP_ICON_B64 = (
@@ -496,6 +497,7 @@ _I18N_TABLE = {
     'スキャン完了: ': {"en": 'Scan complete: ', "zh": '扫描完成：', "ko": '스캔 완료: '},
     'スキャン完了。AI判定を開始します...': {"en": 'Scan complete. Starting AI assessment...', "zh": '扫描完成。开始 AI 判定...', "ko": '스캔 완료. AI 판정을 시작합니다...'},
     'スキャン完了待ち... 完了後にAI判定を自動開始します': {"en": 'Waiting for scan to complete... AI assessment will start automatically when done.', "zh": '正在等待扫描完成... 完成后将自动开始 AI 判定', "ko": '스캔 완료 대기 중... 완료 후 AI 판정을 자동 시작합니다'},
+    'ストライプ（グリッチ）': {"en": 'Stripes (glitch)', "zh": '条纹（故障）', "ko": '스트라이프(글리치)'},
     'スライドショー (S)': {"en": 'Slideshow (S)', "zh": '幻灯片 (S)', "ko": '슬라이드쇼 (S)'},
     'スライドショー時に再生': {"en": "Play during slideshow", "zh": "幻灯片播放时播放", "ko": "슬라이드쇼 중 재생"},
     'スライドショー音楽 OFF': {"en": "Slideshow music OFF", "zh": "幻灯片音乐 OFF", "ko": "슬라이드쇼 음악 OFF"},
@@ -521,6 +523,7 @@ _I18N_TABLE = {
     'バージョン情報': {"en": 'About', "zh": '版本信息', "ko": '버전 정보'},
     'パスをコピーしました: ': {"en": 'Path copied: ', "zh": '已复制路径：', "ko": '경로를 복사했습니다: '},
     'パネル幅の設定': {"en": 'Panel width settings', "zh": '面板宽度设置', "ko": '패널 너비 설정'},
+    'パルス（ドクン）': {"en": 'Pulse (thump)', "zh": '脉冲（咚）', "ko": '펄스(두근)'},
     'ファイル / ': {"en": 'File / ', "zh": '文件 / ', "ko": '파일 / '},
     'ファイル(&F)': {"en": 'File(&F)', "zh": '文件(&F)', "ko": '파일(&F)'},
     'ファイルが見つかりません: ': {"en": 'File not found: ', "zh": '未找到文件：', "ko": '파일을 찾을 수 없습니다: '},
@@ -563,6 +566,7 @@ _I18N_TABLE = {
     'モデル': {"en": 'Model', "zh": '模型', "ko": '모델'},
     'モデル名': {"en": 'Model name', "zh": '模型名称', "ko": '모델 이름'},
     'ランダム': {"en": 'Random', "zh": '随机', "ko": '랜덤'},
+    'ランダムで使う種類:': {"en": 'Types used in random:', "zh": '随机使用的类型：', "ko": '랜덤에서 사용할 종류:'},
     'ランダム（毎回くじ）': {"en": 'Random (each time)', "zh": '随机（每次抽取）', "ko": '랜덤(매번 추첨)'},
     'リセット': {"en": 'Reset', "zh": '重置', "ko": '리셋'},
     'ループ（最初/最後に戻る）': {"en": 'Loop (back to first/last)', "zh": '循环（回到开头/末尾）', "ko": '반복 (처음/마지막으로 돌아가기)'},
@@ -4705,6 +4709,12 @@ if sys.platform == "win32":
                     ("ptMaxPosition", wintypes.POINT), ("rcNormalPosition", wintypes.RECT)]
 
 
+# [v2.35] スライド切替アニメの全種別と、ランダム既定プール
+# (pulse=キック風ドクン / stripes=縦縞グリッチ / fade / slide_lr / slide_ud / zoom)
+ANIM_KINDS = ("fade", "slide_lr", "slide_ud", "zoom", "pulse", "stripes")
+ANIM_DEFAULT_POOL = ("fade", "slide_lr", "slide_ud", "zoom", "pulse")
+
+
 class FullViewer(QDialog):
     """全画面画像ビューア"""
     _HIDE_DELAY = 2500
@@ -4765,7 +4775,10 @@ class FullViewer(QDialog):
         self._wavesync_active: bool = False
         # [v2.34] スライド切替アニメーション
         self._fx_item = None  # 送り前画像を一時的に重ねる QGraphicsPixmapItem | None
+        self._stripe_item = None  # [v2.35] グリッチ縞の合成画像用（初回のみ生成し使い回す）
+        self._stripe_px = None      # [v2.35] 合成 QPixmap（サイズが変わった時だけ再生成）
         self._anim_state = None  # dict | None 進行中のトランジション情報
+        self._shown_once = False  # [v2.35] 初回は遷移せず即時確定（残骸防止）
         self._anim_timer = QTimer(self)
         self._anim_timer.setInterval(16)
         self._anim_timer.timeout.connect(self._anim_step)
@@ -5215,10 +5228,11 @@ class FullViewer(QDialog):
                 pass
         self._overlay_item.hide()
         old_px = self._pix_item.pixmap()
-        if self._anim_enabled() and not old_px.isNull():
+        if self._anim_enabled() and self._shown_once and not old_px.isNull():
             self._start_transition(old_px, px)
         else:
             self._commit_new(px)
+        self._shown_once = True
         try:
             st = os.stat(path)
             mode = T("実寸") if self._fit_mode == "actual" else "fit"
@@ -5280,13 +5294,24 @@ class FullViewer(QDialog):
         except (TypeError, ValueError):
             return 350
 
+    def _anim_pool(self) -> tuple:
+        """ランダム選択の対象になるアニメ種別（ユーザーが有効にしたもの）。"""
+        raw = self._audio_cfg("ss_anim_pool", None)
+        pool = []
+        if isinstance(raw, (list, tuple)):
+            for k in raw:
+                if k in ANIM_KINDS and k not in pool:
+                    pool.append(k)
+        return tuple(pool) if pool else tuple(ANIM_DEFAULT_POOL)
+
     def _anim_type(self) -> str:
         t = str(self._audio_cfg("ss_anim_type", "fade"))
+        pool = self._anim_pool()
         if t == "random":
-            return random.choice(("fade", "slide_lr", "slide_ud", "zoom"))
-        if t in ("fade", "slide_lr", "slide_ud", "zoom"):
+            return random.choice(pool)
+        if t in ANIM_KINDS:
             return t
-        return "fade"
+        return pool[0] if pool else "fade"
 
     def _commit_new(self, px: QPixmap):
         """新画像を最終状態（pos 0,0 / scale 1 / fx 非表示）で描画。"""
@@ -5294,14 +5319,27 @@ class FullViewer(QDialog):
         self._scene.setSceneRect(QRectF(0, 0, px.width(), px.height()))
         self._pix_item.setPos(0, 0)
         self._pix_item.setScale(1.0)
+        self._pix_item.setZValue(0)
+        self._pix_item.setTransformOriginPoint(QPointF(0, 0))
         self._hide_fx()
+        self._hide_stripe()
         self._apply_view()
 
     def _hide_fx(self):
         if self._fx_item is not None:
             self._fx_item.hide()
-            self._fx_item.setPixmap(QPixmap())
+            self._fx_item.setPos(0, 0)
+            self._fx_item.setScale(1.0)
             self._fx_item.setOpacity(1.0)
+            self._fx_item.setPixmap(QPixmap())
+
+    def _hide_stripe(self):
+        # [v2.35] グリッチ合成オーバーレイを確実に退避（残骸防止）
+        if self._stripe_item is not None:
+            self._stripe_item.hide()
+            self._stripe_item.setPos(0, 0)
+            self._stripe_item.setScale(1.0)
+            self._stripe_item.setPixmap(QPixmap())
 
     def _finish_transition(self):
         """進行中のアニメを停止し、新画像の最終状態で確定させる。"""
@@ -5310,7 +5348,22 @@ class FullViewer(QDialog):
         if self._pix_item is not None:
             self._pix_item.setPos(0, 0)
             self._pix_item.setScale(1.0)
+            self._pix_item.setZValue(0)
         self._hide_fx()
+        self._hide_stripe()
+
+    def _build_stripe_bands(self, cw: int, ch: int):
+        # [v2.35] 縦縞の出現順・しきい値・横ずれ（グリッチ感）を事前計算
+        n = max(8, min(18, int(cw / 70)))
+        bw = cw / n
+        order = list(range(n))
+        random.shuffle(order)
+        bands = []
+        for rank, bi in enumerate(order):
+            rt = rank / max(1, n)             # 出現し始める進捗 (0..1)
+            jit = random.uniform(-bw, bw)      # 横スライドのずれ幅
+            bands.append((bi * bw, bw, ch, rt, jit))
+        return bands
 
     def _start_transition(self, old_px: QPixmap, new_px: QPixmap):
         """旧→新の切替アニメを開始。dur<=0 は即時確定のみ。"""
@@ -5328,20 +5381,54 @@ class FullViewer(QDialog):
             self._fx_item.setZValue(10)
             self._fx_item.setTransformationMode(Qt.TransformationMode.SmoothTransformation)
             self._scene.addItem(self._fx_item)
-        try:
-            scaled = old_px.scaled(
-                w, h, Qt.AspectRatioMode.IgnoreAspectRatio,
-                Qt.TransformationMode.SmoothTransformation)
-        except Exception:
-            scaled = old_px
-        self._fx_item.setOpacity(1.0)
-        self._fx_item.setScale(1.0)
-        self._fx_item.setPos(0, 0)
-        self._fx_item.setPixmap(scaled)
-        self._fx_item.show()
-        # ズーム用に回転中心を画像中央へ
-        self._pix_item.setTransformOriginPoint(QPointF(w / 2.0, h / 2.0))
-        self._anim_state = {"kind": kind, "dur": dur, "t": 0, "w": w, "h": h}
+        state = {"kind": kind, "dur": dur, "t": 0, "w": w, "h": h}
+        if kind == "stripes":
+            # グリッチ: 旧画像を薄く敷いた上へ新画像を縦縞で Assemble する。
+            self._fx_item.hide()           # stripe_item が旧描画を兼ねる
+            cap = 1280
+            s = min(1.0, cap / max(w, h))
+            cw = max(1, int(w * s))
+            ch = max(1, int(h * s))
+            try:
+                old_small = old_px.scaled(
+                    cw, ch, Qt.AspectRatioMode.IgnoreAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation)
+                new_small = new_px.scaled(
+                    cw, ch, Qt.AspectRatioMode.IgnoreAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation)
+            except Exception:
+                return
+            if self._stripe_item is None:
+                self._stripe_item = QGraphicsPixmapItem()
+                self._stripe_item.setZValue(12)
+                self._stripe_item.setTransformationMode(Qt.TransformationMode.SmoothTransformation)
+                self._scene.addItem(self._stripe_item)
+            if self._stripe_px is None or self._stripe_px.width() != cw \
+                    or self._stripe_px.height() != ch:
+                self._stripe_px = QPixmap(cw, ch)
+            self._stripe_px.fill(QColor(0, 0, 0))
+            self._stripe_item.setPos(0, 0)
+            self._stripe_item.setScale(1.0 / s if s > 0 else 1.0)
+            self._stripe_item.setPixmap(self._stripe_px)
+            self._stripe_item.show()
+            state.update({"cw": cw, "ch": ch, "old_small": old_small,
+                          "new_small": new_small,
+                          "bands": self._build_stripe_bands(cw, ch)})
+        else:
+            try:
+                scaled = old_px.scaled(
+                    w, h, Qt.AspectRatioMode.IgnoreAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation)
+            except Exception:
+                scaled = old_px
+            self._fx_item.setOpacity(1.0)
+            self._fx_item.setScale(1.0)
+            self._fx_item.setPos(0, 0)
+            self._fx_item.setPixmap(scaled)
+            self._fx_item.show()
+            # ズーム・パルス用に回転中心を画像中央へ
+            self._pix_item.setTransformOriginPoint(QPointF(w / 2.0, h / 2.0))
+        self._anim_state = state
         self._anim_step()                  # 初帧を即時描画
         if self._anim_state is not None:   # dur が短いと 1 帧で終わる事がある
             self._anim_timer.start()
@@ -5372,8 +5459,44 @@ class FullViewer(QDialog):
             self._pix_item.setScale(1.25 - 0.25 * e)
             if fx is not None:
                 fx.setOpacity(1.0 - e)
+        elif kind == "pulse":
+            # キック風: 中間でドクンと拡大し最後に 1.0 へ戻る
+            self._pix_item.setScale(1.0 + 0.15 * math.sin(math.pi * e))
+            if fx is not None:
+                fx.setOpacity(max(0.0, 1.0 - e * 1.8))
+        elif kind == "stripes":
+            self._paint_stripe(st, e)
         if p >= 1.0:
             self._finish_transition()
+
+    def _paint_stripe(self, st: dict, e: float):
+        """縦縞グリッチ合成: 旧画像の上に新画像を縞で現す（1 フレーム描画）。"""
+        px = self._stripe_px
+        if px is None:
+            return
+        old_small = st.get("old_small")
+        new_small = st.get("new_small")
+        if old_small is None or new_small is None:
+            return
+        qp = QPainter(px)
+        try:
+            qp.setCompositionMode(QPainter.CompositionMode_Source)
+            qp.drawPixmap(0, 0, old_small)
+            qp.setCompositionMode(QPainter.CompositionMode_SourceOver)
+            for (x0, bw, bh, rt, jit) in st.get("bands", ()):
+                local = 0.0 if e <= rt else min(1.0, (e - rt) / 0.34)
+                if local > 0.0:
+                    off = (1.0 - local) * jit
+                    src_x = int(max(0, min(new_small.width() - 1, x0)))
+                    src_w = int(max(1, min(new_small.width() - src_x, bw)))
+                    dst_x = x0 + off
+                    qp.drawPixmap(QRectF(dst_x, 0, bw + 0.8, bh),
+                                  new_small, QRectF(src_x, 0, src_w, new_small.height()))
+        finally:
+            qp.end()
+        if self._stripe_item is not None:
+            self._stripe_item.update()
+
 
     def _show_image(self):
         if not self._paths: return
@@ -5405,6 +5528,11 @@ class FullViewer(QDialog):
                 self._pix_loader.wait(500)
             self._pix_loader = None
         self._busy_timer.stop()
+        # [v2.35] 進行中のスライドアニメを確定させ、オーバーレイ残骸を残さない
+        try:
+            self._finish_transition()
+        except Exception:
+            pass
         # [v2.17] 先読みスレッドも確実に止めてから終了する
         for ldr in list(self._prefetch.values()):
             ldr.cancel()
@@ -7162,6 +7290,8 @@ class SettingsDialog(QDialog):
         self._ss_anim_type = QComboBox()
         for _code, _label in (("fade", T("フェード")), ("slide_lr", T("スライド（左右）")),
                               ("slide_ud", T("スライド（上下）")), ("zoom", T("ズームイン")),
+                              ("pulse", T("パルス（ドクン）")),
+                              ("stripes", T("ストライプ（グリッチ）")),
                               ("random", T("ランダム（毎回くじ）"))):
             self._ss_anim_type.addItem(_label, _code)
         _at = str(self._cfg.get("ss_anim_type", "fade"))
@@ -7169,6 +7299,28 @@ class SettingsDialog(QDialog):
         if _ai >= 0:
             self._ss_anim_type.setCurrentIndex(_ai)
         fg.addRow(T("種類:"), self._ss_anim_type)
+        # [v2.35] ランダム抽選の対象（チェックしたものだけ使う／使いたくない物を除外）
+        _pool_raw = self._cfg.get("ss_anim_pool", None)
+        if not isinstance(_pool_raw, (list, tuple)):
+            _pool_raw = list(ANIM_DEFAULT_POOL)
+        _pool_sel = [k for k in _pool_raw if k in ANIM_KINDS]
+        self._ss_anim_pool_boxes = {}
+        _pool_widget = QWidget()
+        _pg = QGridLayout(_pool_widget)
+        _pg.setContentsMargins(0, 0, 0, 0)
+        _pg.setHorizontalSpacing(14)
+        _pg.setVerticalSpacing(2)
+        _anim_labels = {
+            "fade": T("フェード"), "slide_lr": T("スライド（左右）"),
+            "slide_ud": T("スライド（上下）"), "zoom": T("ズームイン"),
+            "pulse": T("パルス（ドクン）"), "stripes": T("ストライプ（グリッチ）"),
+        }
+        for _i, _k in enumerate(ANIM_KINDS):
+            _cb = QCheckBox(_anim_labels[_k])
+            _cb.setChecked(_k in _pool_sel)
+            _pg.addWidget(_cb, _i // 2, _i % 2)
+            self._ss_anim_pool_boxes[_k] = _cb
+        fg.addRow(T("ランダムで使う種類:"), _pool_widget)
         self._ss_anim_ms = QSpinBox()
         self._ss_anim_ms.setRange(0, 3000)
         self._ss_anim_ms.setSingleStep(50)
@@ -7447,6 +7599,9 @@ class SettingsDialog(QDialog):
             self._cfg["ss_anim_enabled"] = bool(self._ss_anim_enabled.isChecked())
             self._cfg["ss_anim_type"]    = str(self._ss_anim_type.currentData())
             self._cfg["ss_anim_ms"]      = int(self._ss_anim_ms.value())
+        if hasattr(self, "_ss_anim_pool_boxes"):
+            self._cfg["ss_anim_pool"] = [
+                k for k in ANIM_KINDS if self._ss_anim_pool_boxes[k].isChecked()]
         self.accept()
 
     def focus_lora_tab(self):

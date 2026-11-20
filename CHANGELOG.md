@@ -4,6 +4,21 @@ PNG/画像メタデータビューア (PySide6版) — 更新履歴
 
 ---
 
+## [v2.35] 2026-11-21
+
+### 新機能（スライド切替アニメ）
+- **パルス（ドクン）**: 送り時に新画像を「拡大→元へ戻る」キックリズムで跳ねさせる。`_anim_step` の `pulse` 分岐で、回転中心を画像中央に置いた `_pix_item.setScale(1.0 + 0.15*sin(π·e))` と、旧オーバーレイ `_fx_item` を前半で消す合成 [png_viewer.py:5436-5470](file:///N:/マイドライブ/png_viwer/png_viewer.py#L5436-L5470)。`e=0/1` で scale=1.0、`e=0.5` で約 1.15 の山になる。
+- **ストライプ（グリッチ）**: 新画像を縦縞でランダム順にアセンブルし、横ずれ付きでグリッチ風に現す。`setClipPath` が PySide6 の `QGraphicsItem` に未公開のため、`_stripe_item`（初回のみ生成・使い回し）に **再利用する合成 QPixmap** へ「旧画像 +  Revealed 縞スライス」を 1 フレームずつ `QPainter.drawPixmap` 合成して描く [png_viewer.py:5355-5404](file:///N:/マイドライブ/png_viwer/png_viewer.py#L5355-L5404) / [png_viewer.py:5472-5495](file:///N:/マイドライブ/png_viwer/png_viewer.py#L5472-L5495)。解像度は長辺 1280px にダウンスケールして描画負荷を抑制。ユーザーの「後で消すかも」に備え既定のランダムプールからは除外（種類で直接選べば使える）。
+- **ランダムで使う種類を選択可能に**: 環境設定 > FullViewer のアニメグループに種別チェックボックス（フェード/スライド左右/スライド上下/ズーム/パルス/ストライプ）を追加し、`ss_anim_pool` に保存 [png_viewer.py:7302-7323](file:///N:/マイドライブ/png_viwer/png_viewer.py#L7302-L7323) / [png_viewer.py:7600-7603](file:///N:/マイドライブ/png_viwer/png_viewer.py#L7600-L7603)。種類=「ランダム」のとき `_anim_pool()` がチェック済みのものだけから抽選するので、使いたくないアニメを除外できる [png_viewer.py:5297-5312](file:///N:/マイドライブ/png_viwer/png_viewer.py#L5297-L5312)。種別リストは `ANIM_KINDS` / 既定 `ANIM_DEFAULT_POOL` に集約。
+
+### 修正
+- **ビュアー表示時にアニメの残骸が後ろに残る**: オーバーレイ（`_fx_item` / 新設 `_stripe_item`）の退避漏れと、閉じる際に進行中のアニメがそのまま残る問題を解消。`_hide_fx()` を pos/scale/opacity まで完全リセット化し `_hide_stripe()` を追加、`_commit_new`/`_finish_transition` で両オーバーレイを確実に非表示＋zValue/変換を初期化 [png_viewer.py:5318-5352](file:///N:/マイドライブ/png_viwer/png_viewer.py#L5318-L5352)。加えて初回は遷移せず即時確定する `_shown_once` ガード [png_viewer.py:5231-5235](file:///N:/マイドライブ/png_viwer/png_viewer.py#L5231-L5235)、`closeEvent` で `_finish_transition()` を呼んで閉じる瞬間の残骸も除去 [png_viewer.py:5531-5536](file:///N:/マイドライブ/png_viwer/png_viewer.py#L5531-L5536)。
+
+### 検証
+- `.tmp/smoke_v235.py`: `ANIM_KINDS`/プール、`_anim_type` の固定/ランダム（プール限定）、`pulse` が中間で拡大し終端 1.0、`stripes` が `_stripe_item` を表示し合成後に非表示、`_shown_once` で初回非遷移、`closeEvent` 相当で `_finish_transition` 後にオーバーレイが全て hide されることを offscreen で検証。既存 smoke（v2.33/v2.34/v2.34.1）も回帰 PASS。
+
+---
+
 ## [v2.34.1] 2026-11-21
 
 ### 変更（スライドショー音楽と SS の連動）
