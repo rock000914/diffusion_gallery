@@ -4,6 +4,45 @@ PNG/画像メタデータビューア (PySide6版) — 更新履歴
 
 ---
 
+## [v2.30] 2026-11-21
+
+### 追加機能: BPM 自動検出（Phase 2）
+ユーザー指定「ビートは自動検出と手動で」に対応。Phase 1 の BPM 手動入力に加え、**librosa による自動 BPM 検出**を追加。追加 pip install 不要（librosa 0.11.0 / soundfile / numpy / scipy は環境導入済み）。
+
+#### 実装
+- **librosa 遅延 import** [png_viewer.py:200-206](file:///N:/マイドライブ/png_viwer/png_viewer.py#L200-L206): 起動時に `import librosa` で存在チェックのみ（HAS_LIBROSA フラグ）。実際の librosa / numpy 呼び出しは `detect_bpm()` 内で遅延 import。librosa 自体の import は 5-15 秒かかるため、初回検出時のみ待たせる。
+- **`detect_bpm(path, sample_sec=30)`** [png_viewer.py:6312-6354](file:///N:/マイドライブ/png_viwer/png_viewer.py#L6312-L6354): 先頭 30 秒を sr=22050 mono で読み、`librosa.beat.beat_track` で BPM 推定。89 分メドレーでも数秒で終わる。
+- **`bpm_cache.json`**（APP_DIR 直下）: `{path: {mtime, size, bpm}}` 形式。mtime + size 一致ならファイルキャッシュから即返す（0.01 秒）。原子的書き出しは tmp + `os.replace`。
+- **`_BpmDetectWorker` (QThread)** [png_viewer.py:6357-6385](file:///N:/マイドライブ/png_viwer/png_viewer.py#L6357-L6385): BGM フォルダ内の全曲を順に解析。`progress(done, total, current_path)` / `finished_all(bpms, median)` / `failed(msg)` シグナルで UI に通知。`cancel()` で中断可能。
+- **`np_median(values)`** [png_viewer.py:6388-6396](file:///N:/マイドライブ/png_viwer/png_viewer.py#L6388-L6396): numpy 非依存の中央値関数（偶数件は中央 2 件の平均）。
+- **SettingsDialog 音楽タブ拡張** [png_viewer.py:6454-6471](file:///N:/マイドライブ/png_viwer/png_viewer.py#L6454-L6471): BPM スピンの行を QHBoxLayout に変更、`🎵 自動検出` ボタンと結果ラベルを追加。`HAS_LIBROSA=False` 時はボタン無効化 + ツールチップで理由表示。
+- **解析ハンドラ群** [png_viewer.py:6535-6585](file:///N:/マイドライブ/png_viwer/png_viewer.py#L6535-L6585):
+  - `_on_auto_detect_bpm()`: BGM フォルダ内の音楽ファイルを列挙、ワーカ起動、ボタン無効化、結果ラベルに「解析中 0/N...」表示。
+  - `_on_bpm_progress(done, total, current_path)`: 進捗更新、ファイル名は 30 文字で切り詰め。
+  - `_on_bpm_done(bpms, median)`: 中央値 BPM をスピンに書き込み、ラベルに「中央値 X BPM / N曲検出」表示。
+  - `_on_bpm_failed(msg)`: ラベルに警告表示。
+- **ワーカ安全停止**: `_save()` と `reject()` で `cancel() + wait(3000)`。ダイアログ破棄時のクラッシュを防止。
+- **i18n**: 12 キー追加、テーブル 606 → **618 キー**。en/zh/ko 翻訳込み。プレースホルダ `{0}` `{1}` `{2}` は各言語で同じ位置に維持。
+- `APP_VERSION` を `v2.29` → `v2.30` へバンプ。
+
+### サンプル検証（`E:\eof1.8RC12\y2mate.com - 高確率で流れる定番人気EDMクラブミュージックメドレー.mp3`）
+- 89 分 EDM メドレー、128kbps MP3、44100Hz stereo。
+- QMediaPlayer 統合: `LoadedMedia` 状態、duration 5348310ms 正確、`play()` で `PlayingState` / position 941ms、error なし。
+- `detect_bpm()` 単曲: 初回 5.88 秒（librosa import 含む）、キャッシュ後 0.0001 秒、ファイルキャッシュ復元 0.0128 秒。検出値 129 BPM。
+- 地点別推定: 冒頭 129.2 BPM / 45分時点 129.2 BPM / 89分時点 107.7 BPM（メドレーなので曲ごとに異なる）。
+- フォルダ一括検出: `E:\eof1.8RC12\` の 62 曲を `_BpmDetectWorker` で解析、**中央値 123 BPM / 62曲検出**、スピンに自動設定。
+
+### Phase 3（将来）
+- 曲ごとの BPM を検出してキャッシュし、曲切り替わり時に `_beat_interval_ms()` を動的再計算（メドレー対応）。
+- librosa によるオンセット検出で、拍位置に正確に同期する位相合わせ。
+
+### 検証
+- `python -m py_compile` OK。`ast` で `_I18N_TABLE` 618 キー・新規 12 キーの存在を確認。
+- offscreen で `SettingsDialog` 音楽タブ構築、`🎵 自動検出` ボタン・結果ラベル・HAS_LIBROSA フラグ表示を確認。
+- offscreen で `_on_auto_detect_bpm()` → `_BpmDetectWorker` 起動 → `finished_all` シグナル受信 → 中央値 123 BPM がスピンに反映、ラベルに「中央値 123 BPM / 62曲検出」表示されることを確認。
+
+---
+
 ## [v2.29] 2026-11-21
 
 ### 追加機能: スライドショー音楽再生（Phase 1）

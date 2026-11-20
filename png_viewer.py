@@ -198,10 +198,18 @@ except ImportError:
     QAudioOutput = None
     HAS_MULTIMEDIA = False
 
+# BPM 自動検出用 (v2.30)。librosa は import に 1-3 秒かかるので、HAS_LIBROSA フラグだけ
+# 即決しておき、実際の librosa / numpy は detect_bpm() 内で遅延 import する。
+try:
+    import librosa  # noqa: F401  (存在チェックのみ)
+    HAS_LIBROSA = True
+except ImportError:
+    HAS_LIBROSA = False
+
 # ══════════════════════════════════════════════════════════════════════════════
 #  定数・設定
 # ══════════════════════════════════════════════════════════════════════════════
-APP_VERSION  = "v2.29"
+APP_VERSION  = "v2.30"
 APP_NAME     = "PNG Metadata Viewer"
 APP_AUTHOR   = "nemot"
 _APP_ICON_B64 = (
@@ -270,6 +278,24 @@ def Te(s):
 # キーは画面に表示される文字列そのもの。改行などを含む。未登録の文字列は
 # 日本語のまま表示される。
 _I18N_TABLE = {
+    '\n\nお気に入りから削除しますか？': {"en": '\n\nRemove from favorites?', "zh": '\n\n要从收藏中删除吗？', "ko": '\n\n즐겨찾기에서 삭제하시겠습니까?'},
+    '\n\nこのファイルを ': {"en": '\n\nThis file ', "zh": '\n\n此文件', "ko": '\n\n이 파일을 '},
+    '\n\n保存先を変える場合は settings.json に絶対パスの `thumb_cache_dir` を指定します。移行時は先に丸ごとコピーし、全件サイズ一致を確認してから元を削除してください（コピー先に `.fmt_version` が無いと起動時の自動消去で全キャッシュが消えます）。': {"en": '\n\nTo change the location, set an absolute path `thumb_cache_dir` in settings.json. When migrating, copy everything first, verify that all file sizes match, then delete the original (without `.fmt_version` in the destination, the automatic cleanup at startup will delete the entire cache).', "zh": '\n\n如需更改保存位置，请在 settings.json 中指定绝对路径 `thumb_cache_dir`。迁移时请先完整复制，确认所有文件大小一致后再删除原文件（如果目标位置没有 `.fmt_version`，启动时的自动清理会删除全部缓存）。', "ko": '\n\n저장 위치를 변경하려면 settings.json 에 절대 경로 `thumb_cache_dir` 를 지정하세요. 마이그레이션 시에는 먼저 전체를 복사하고 모든 파일 크기가 일치하는지 확인한 뒤 원본을 삭제하세요 (대상에 `.fmt_version` 이 없으면 시작 시 자동 정리로 전체 캐시가 삭제됩니다).'},
+    '\n\n既存のロゴ画像を新しい保存先へ移動しますか？': {"en": '\n\nMove existing logo images to the new location?', "zh": '\n\n是否将现有 Logo 图片移动到新的保存位置？', "ko": '\n\n기존 로고 이미지를 새 저장 위치로 이동하시겠습니까?'},
+    '\n  … 他 ': {"en": '\n  … and ', "zh": '\n  … 等 ', "ko": '\n  … 외 '},
+    '\n...他': {"en": '\n...more', "zh": '\n...等', "ko": '\n...외'},
+    '\n[パラメータ解析エラー: ': {"en": '\n[Parameter parse error: ', "zh": '\n[参数解析错误：', "ko": '\n[파라미터 해석 오류: '},
+    '\n※ 保存先を変更しても、ここに表示されている場所が現在の保存先です。': {"en": '\n※ Even if the location is changed, the path shown here is the current save location.', "zh": '\n\n※ 即使更改了保存位置，这里显示的仍然是当前保存位置。', "ko": '\n\n※ 저장 위치를 변경해도 여기에 표시된 경로가 현재 저장 위치입니다.'},
+    '\n← 前の画像  |  Esc/Enter で閉じる': {"en": '\n← Previous image  |  Esc/Enter to close', "zh": '\n← 上一张图片  |  按 Esc/Enter 关闭', "ko": '\n← 이전 이미지  |  Esc/Enter 로 닫기'},
+    '\nうち旧形式 .pkl が ': {"en": '\nof which legacy .pkl format ', "zh": '\n其中旧格式 .pkl ', "ko": '\n그중 구형식 .pkl 이 '},
+    '\nこのファイルを ': {"en": '\nThis file ', "zh": '\n此文件', "ko": '\n이 파일을 '},
+    '\nキーボードショートカット\n\n[ファイル操作]\nCtrl+O          フォルダを開く\nF5              更新（再読み込み）\nF2              名前の変更\nDelete          ゴミ箱に移動（複数選択対応）\nShift+Delete    完全削除（ゴミ箱を使わない）\nCtrl+C          コピー（ファイルとして）\nCtrl+X          切り取り\nCtrl+V          貼り付け\nCtrl+Shift+N    新しいフォルダを作成\n\n[ブックマーク]\nCtrl+B          ブックマーク一覧を表示\nCtrl+Shift+B    現在のフォルダをブックマークに追加\n\n[選択]\nCtrl+A          すべて選択\nCtrl+D          選択解除\nCtrl+クリック   個別追加/解除\nShift+クリック  範囲選択\nShift+矢印      選択範囲を拡張\nドラッグ        矩形ドラッグで範囲選択\nEscape          複数選択を解除して単一選択に戻す\n\n[グリッド操作]\n←↑↓→          カーソル移動\nPageUp/Down     ページ単位で移動\nHome / End      先頭 / 末尾に移動\nEnter           全画面表示\nCtrl+ホイール   サムネサイズ変更\n\n[フォルダ移動]\nCtrl+Left/Right 前後のフォルダ\nAlt+Left/Right  前後のフォルダ\nAlt+Up          親フォルダへ移動\n\n[表示・情報]\nAlt+Enter       プロパティ\nF1              このヘルプ\nCtrl+,          環境設定\n\n[起動時]\n前回開いていたフォルダを自動復元します。\n\n[右パネル]\nプレビューと情報エリアの境界をドラッグしてリサイズ可能\n\n[FullViewer]\n←→↑↓ PgUp/Dn  前後の画像\nSpace / F11     没入モード ON/OFF\nR               回転    +/-  ズーム\n0               等倍    S    スライドショー\nEsc/Enter       閉じる  Delete  削除\n': {"en": '\nKeyboard shortcuts\n\n[File operations]\nCtrl+O          Open folder\nF5              Refresh (reload)\nF2              Rename\nDelete          Move to Recycle Bin (multi-select)\nShift+Delete    Delete permanently (bypass Recycle Bin)\nCtrl+C          Copy (as files)\nCtrl+X          Cut\nCtrl+V          Paste\nCtrl+Shift+N    New folder\n\n[Bookmarks]\nCtrl+B          Show bookmark list\nCtrl+Shift+B    Add current folder to bookmarks\n\n[Selection]\nCtrl+A          Select all\nCtrl+D          Deselect\nCtrl+Click      Toggle individual selection\nShift+Click     Range selection\nShift+Arrow     Extend selection range\nDrag            Rectangle drag selection\nEscape          Clear multi-selection, back to single selection\n\n[Grid]\n←↑↓→          Move cursor\nPageUp/Down     Move page by page\nHome / End      Move to start / end\nEnter           Fullscreen view\nCtrl+Wheel      Change thumbnail size\n\n[Folder navigation]\nCtrl+Left/Right Previous / next folder\nAlt+Left/Right  Previous / next folder\nAlt+Up          Go up to parent folder\n\n[View / info]\nAlt+Enter       Properties\nF1              This help\nCtrl+,          Settings\n\n[On startup]\nAutomatically restores the folder that was open last time.\n\n[Right panel]\nDrag the boundary between the preview and info areas to resize\n\n[FullViewer]\n←→↑↓ PgUp/Dn  Previous / next image\nSpace / F11     Immersive mode ON/OFF\nR               Rotate    +/-  Zoom\n0               Actual size    S    Slideshow\nEsc/Enter       Close    Delete  Delete\n', "zh": '\n键盘快捷键\n\n[文件操作]\nCtrl+O          打开文件夹\nF5              刷新（重新加载）\nF2              重命名\nDelete          移动到回收站（支持多选）\nShift+Delete    彻底删除（不使用回收站）\nCtrl+C          复制（作为文件）\nCtrl+X          剪切\nCtrl+V          粘贴\nCtrl+Shift+N    新建文件夹\n\n[书签]\nCtrl+B          显示书签列表\nCtrl+Shift+B    将当前文件夹添加到书签\n\n[选择]\nCtrl+A          全选\nCtrl+D          取消选择\nCtrl+点击       单个添加/取消\nShift+点击      范围选择\nShift+方向键    扩展选择范围\n拖动            矩形框选\nEscape          取消多选，恢复单选\n\n[网格操作]\n←↑↓→          移动光标\nPageUp/Down     按页移动\nHome / End      移动到开头 / 末尾\nEnter           全屏显示\nCtrl+滚轮       缩略图大小\n\n[文件夹移动]\nCtrl+Left/Right 上一/下一文件夹\nAlt+Left/Right  上一/下一文件夹\nAlt+Up          返回上级文件夹\n\n[显示/信息]\nAlt+Enter       属性\nF1              此帮助\nCtrl+,          设置\n\n[启动时]\n自动恢复上次打开的文件夹。\n\n[右面板]\n拖动预览和信息区域之间的边界可调整大小\n\n[FullViewer]\n←→↑↓ PgUp/Dn  上一张/下一张图片\nSpace / F11     沉浸模式 ON/OFF\nR               旋转    +/-  缩放\n0               实际大小    S    幻灯片\nEsc/Enter       关闭    Delete  删除\n', "ko": '\n키보드 단축키\n\n[파일 작업]\nCtrl+O          폴더 열기\nF5              새로고침 (다시 불러오기)\nF2              이름 변경\nDelete          휴지통으로 이동 (다중 선택 지원)\nShift+Delete    완전 삭제 (휴지통 사용 안 함)\nCtrl+C          복사 (파일로)\nCtrl+X          잘라내기\nCtrl+V          붙여넣기\nCtrl+Shift+N    새 폴더 만들기\n\n[북마크]\nCtrl+B          북마크 목록 표시\nCtrl+Shift+B    현재 폴더를 북마크에 추가\n\n[선택]\nCtrl+A          전체 선택\nCtrl+D          선택 해제\nCtrl+클릭       개별 추가/해제\nShift+클릭      범위 선택\nShift+화살표    선택 범위 확장\n드래그          사각형 드래그로 범위 선택\nEscape          다중 선택 해제 후 단일 선택으로\n\n[그리드 조작]\n←↑↓→          커서 이동\nPageUp/Down     페이지 단위로 이동\nHome / End      처음 / 끝으로 이동\nEnter           전체 화면 표시\nCtrl+휠         썸네일 크기 변경\n\n[폴더 이동]\nCtrl+Left/Right 이전/다음 폴더\nAlt+Left/Right  이전/다음 폴더\nAlt+Up          상위 폴더로 이동\n\n[표시/정보]\nAlt+Enter       속성\nF1              이 도움말\nCtrl+,          환경 설정\n\n[시작 시]\n지난 번에 열었던 폴더를 자동으로 복원합니다.\n\n[오른쪽 패널]\n미리보기와 정보 영역 경계를 드래그하여 크기 조절\n\n[FullViewer]\n←→↑↓ PgUp/Dn  이전/다음 이미지\nSpace / F11     몰입 모드 ON/OFF\nR               회전    +/-  확대/축소\n0               실제 크기    S    슬라이드쇼\nEsc/Enter       닫기    Delete  삭제\n'},
+    '\nサイズ: ': {"en": '\nSize: ', "zh": '\n大小：', "ko": '\n크기: '},
+    '\n保持する上限を MB で指定してください（古いものから削除されます）。': {"en": '\nEnter the limit to keep in MB (oldest files will be deleted first).', "zh": '\n请以 MB 指定要保留的上限（将从最旧的开始删除）。', "ko": '\n유지할 상한을 MB 단위로 지정하세요 (오래된 것부터 삭제됩니다).'},
+    '\n場所: ': {"en": '\nLocation: ', "zh": '\n位置：', "ko": '\n위치: '},
+    '\n変更先: ': {"en": '\nChange to: ', "zh": '\n更改为：', "ko": '\n변경 대상: '},
+    '\n旧形式 .pkl: ': {"en": '\nLegacy .pkl: ', "zh": '\n旧格式 .pkl：', "ko": '\n구형식 .pkl: '},
+    '\n更新日時: ': {"en": '\nModified: ', "zh": '\n更新时间：', "ko": '\n수정 일시: '},
     '  |  使用: ': {"en": '  |  Used: ', "zh": '  |  使用：', "ko": '  |  사용: '},
     '  |  最終: ': {"en": '  |  Last: ', "zh": '  |  最后：', "ko": '  |  최종: '},
     '  |  選択中グループ: ': {"en": '  |  Selected group: ', "zh": '  |  所选分组：', "ko": '  |  선택 그룹: '},
@@ -312,9 +338,12 @@ _I18N_TABLE = {
     'AI評価表示: ': {"en": 'AI rating display: ', "zh": 'AI 评价显示：', "ko": 'AI 평가 표시: '},
     'AI速度: ': {"en": 'AI speed: ', "zh": 'AI 速度：', "ko": 'AI 속도: '},
     'BGMフォルダ:': {"en": "BGM folder:", "zh": "BGM 文件夹：", "ko": "BGM 폴더:"},
+    'BGMフォルダが設定されていません': {"en": "BGM folder is not set", "zh": "未设置 BGM 文件夹", "ko": "BGM 폴더가 설정되지 않았습니다"},
     'BGMフォルダを選択': {"en": "Select BGM folder", "zh": "选择 BGM 文件夹", "ko": "BGM 폴더 선택"},
+    'BGMフォルダ内の全曲を解析して中央値 BPM を設定': {"en": "Analyze all tracks in the BGM folder and set the median BPM", "zh": "解析 BGM 文件夹内所有曲目，设置中位数 BPM", "ko": "BGM 폴더의 모든 곡을 분석하여 중앙값 BPM 설정"},
     'BGM（拍同期の基準）': {"en": "BGM (beat-sync source)", "zh": "BGM（节拍同步基准）", "ko": "BGM (박자 동기화 기준)"},
     'BPM (0=無効)': {"en": "BPM (0=disabled)", "zh": "BPM（0=禁用）", "ko": "BPM (0=비활성)"},
+    'BPM 自動検出': {"en": "BPM Auto-detect", "zh": "BPM 自动检测", "ko": "BPM 자동 감지"},
     'CFG scale の範囲。値が不明な画像は除外されます': {"en": 'CFG scale range. Images with unknown values are excluded.', "zh": 'CFG scale 范围。值未知的图片将被排除。', "ko": 'CFG scale 범위. 알 수 없는 값의 이미지는 제외됩니다'},
     'CSVを出力しました:\n': {"en": 'CSV exported:\n', "zh": '已导出 CSV：\n', "ko": 'CSV 출력 완료:\n'},
     'CSV出力': {"en": 'CSV export', "zh": 'CSV 导出', "ko": 'CSV 출력'},
@@ -351,25 +380,9 @@ _I18N_TABLE = {
     '[メタ取得エラー: ': {"en": '[Metadata fetch error: ', "zh": '[获取元数据错误：', "ko": '[메타 가져오기 오류: '},
     '[年月]': {"en": '[year/month]', "zh": '[年月]', "ko": '[년월]'},
     '\\s*[日]': {"en": '\\s*[日]', "zh": '\\s*[日]', "ko": '\\s*[日]'},
-    '\n  … 他 ': {"en": '\n  … and ', "zh": '\n  … 等 ', "ko": '\n  … 외 '},
-    '\n...他': {"en": '\n...more', "zh": '\n...等', "ko": '\n...외'},
-    '\n[パラメータ解析エラー: ': {"en": '\n[Parameter parse error: ', "zh": '\n[参数解析错误：', "ko": '\n[파라미터 해석 오류: '},
-    '\n\nお気に入りから削除しますか？': {"en": '\n\nRemove from favorites?', "zh": '\n\n要从收藏中删除吗？', "ko": '\n\n즐겨찾기에서 삭제하시겠습니까?'},
-    '\n\nこのファイルを ': {"en": '\n\nThis file ', "zh": '\n\n此文件', "ko": '\n\n이 파일을 '},
-    '\n\n保存先を変える場合は settings.json に絶対パスの `thumb_cache_dir` を指定します。移行時は先に丸ごとコピーし、全件サイズ一致を確認してから元を削除してください（コピー先に `.fmt_version` が無いと起動時の自動消去で全キャッシュが消えます）。': {"en": '\n\nTo change the location, set an absolute path `thumb_cache_dir` in settings.json. When migrating, copy everything first, verify that all file sizes match, then delete the original (without `.fmt_version` in the destination, the automatic cleanup at startup will delete the entire cache).', "zh": '\n\n如需更改保存位置，请在 settings.json 中指定绝对路径 `thumb_cache_dir`。迁移时请先完整复制，确认所有文件大小一致后再删除原文件（如果目标位置没有 `.fmt_version`，启动时的自动清理会删除全部缓存）。', "ko": '\n\n저장 위치를 변경하려면 settings.json 에 절대 경로 `thumb_cache_dir` 를 지정하세요. 마이그레이션 시에는 먼저 전체를 복사하고 모든 파일 크기가 일치하는지 확인한 뒤 원본을 삭제하세요 (대상에 `.fmt_version` 이 없으면 시작 시 자동 정리로 전체 캐시가 삭제됩니다).'},
-    '\n\n既存のロゴ画像を新しい保存先へ移動しますか？': {"en": '\n\nMove existing logo images to the new location?', "zh": '\n\n是否将现有 Logo 图片移动到新的保存位置？', "ko": '\n\n기존 로고 이미지를 새 저장 위치로 이동하시겠습니까?'},
-    '\n※ 保存先を変更しても、ここに表示されている場所が現在の保存先です。': {"en": '\n※ Even if the location is changed, the path shown here is the current save location.', "zh": '\n\n※ 即使更改了保存位置，这里显示的仍然是当前保存位置。', "ko": '\n\n※ 저장 위치를 변경해도 여기에 표시된 경로가 현재 저장 위치입니다.'},
-    '\n← 前の画像  |  Esc/Enter で閉じる': {"en": '\n← Previous image  |  Esc/Enter to close', "zh": '\n← 上一张图片  |  按 Esc/Enter 关闭', "ko": '\n← 이전 이미지  |  Esc/Enter 로 닫기'},
-    '\nうち旧形式 .pkl が ': {"en": '\nof which legacy .pkl format ', "zh": '\n其中旧格式 .pkl ', "ko": '\n그중 구형식 .pkl 이 '},
-    '\nこのファイルを ': {"en": '\nThis file ', "zh": '\n此文件', "ko": '\n이 파일을 '},
-    '\nキーボードショートカット\n\n[ファイル操作]\nCtrl+O          フォルダを開く\nF5              更新（再読み込み）\nF2              名前の変更\nDelete          ゴミ箱に移動（複数選択対応）\nShift+Delete    完全削除（ゴミ箱を使わない）\nCtrl+C          コピー（ファイルとして）\nCtrl+X          切り取り\nCtrl+V          貼り付け\nCtrl+Shift+N    新しいフォルダを作成\n\n[ブックマーク]\nCtrl+B          ブックマーク一覧を表示\nCtrl+Shift+B    現在のフォルダをブックマークに追加\n\n[選択]\nCtrl+A          すべて選択\nCtrl+D          選択解除\nCtrl+クリック   個別追加/解除\nShift+クリック  範囲選択\nShift+矢印      選択範囲を拡張\nドラッグ        矩形ドラッグで範囲選択\nEscape          複数選択を解除して単一選択に戻す\n\n[グリッド操作]\n←↑↓→          カーソル移動\nPageUp/Down     ページ単位で移動\nHome / End      先頭 / 末尾に移動\nEnter           全画面表示\nCtrl+ホイール   サムネサイズ変更\n\n[フォルダ移動]\nCtrl+Left/Right 前後のフォルダ\nAlt+Left/Right  前後のフォルダ\nAlt+Up          親フォルダへ移動\n\n[表示・情報]\nAlt+Enter       プロパティ\nF1              このヘルプ\nCtrl+,          環境設定\n\n[起動時]\n前回開いていたフォルダを自動復元します。\n\n[右パネル]\nプレビューと情報エリアの境界をドラッグしてリサイズ可能\n\n[FullViewer]\n←→↑↓ PgUp/Dn  前後の画像\nSpace / F11     没入モード ON/OFF\nR               回転    +/-  ズーム\n0               等倍    S    スライドショー\nEsc/Enter       閉じる  Delete  削除\n': {"en": '\nKeyboard shortcuts\n\n[File operations]\nCtrl+O          Open folder\nF5              Refresh (reload)\nF2              Rename\nDelete          Move to Recycle Bin (multi-select)\nShift+Delete    Delete permanently (bypass Recycle Bin)\nCtrl+C          Copy (as files)\nCtrl+X          Cut\nCtrl+V          Paste\nCtrl+Shift+N    New folder\n\n[Bookmarks]\nCtrl+B          Show bookmark list\nCtrl+Shift+B    Add current folder to bookmarks\n\n[Selection]\nCtrl+A          Select all\nCtrl+D          Deselect\nCtrl+Click      Toggle individual selection\nShift+Click     Range selection\nShift+Arrow     Extend selection range\nDrag            Rectangle drag selection\nEscape          Clear multi-selection, back to single selection\n\n[Grid]\n←↑↓→          Move cursor\nPageUp/Down     Move page by page\nHome / End      Move to start / end\nEnter           Fullscreen view\nCtrl+Wheel      Change thumbnail size\n\n[Folder navigation]\nCtrl+Left/Right Previous / next folder\nAlt+Left/Right  Previous / next folder\nAlt+Up          Go up to parent folder\n\n[View / info]\nAlt+Enter       Properties\nF1              This help\nCtrl+,          Settings\n\n[On startup]\nAutomatically restores the folder that was open last time.\n\n[Right panel]\nDrag the boundary between the preview and info areas to resize\n\n[FullViewer]\n←→↑↓ PgUp/Dn  Previous / next image\nSpace / F11     Immersive mode ON/OFF\nR               Rotate    +/-  Zoom\n0               Actual size    S    Slideshow\nEsc/Enter       Close    Delete  Delete\n', "zh": '\n键盘快捷键\n\n[文件操作]\nCtrl+O          打开文件夹\nF5              刷新（重新加载）\nF2              重命名\nDelete          移动到回收站（支持多选）\nShift+Delete    彻底删除（不使用回收站）\nCtrl+C          复制（作为文件）\nCtrl+X          剪切\nCtrl+V          粘贴\nCtrl+Shift+N    新建文件夹\n\n[书签]\nCtrl+B          显示书签列表\nCtrl+Shift+B    将当前文件夹添加到书签\n\n[选择]\nCtrl+A          全选\nCtrl+D          取消选择\nCtrl+点击       单个添加/取消\nShift+点击      范围选择\nShift+方向键    扩展选择范围\n拖动            矩形框选\nEscape          取消多选，恢复单选\n\n[网格操作]\n←↑↓→          移动光标\nPageUp/Down     按页移动\nHome / End      移动到开头 / 末尾\nEnter           全屏显示\nCtrl+滚轮       缩略图大小\n\n[文件夹移动]\nCtrl+Left/Right 上一/下一文件夹\nAlt+Left/Right  上一/下一文件夹\nAlt+Up          返回上级文件夹\n\n[显示/信息]\nAlt+Enter       属性\nF1              此帮助\nCtrl+,          设置\n\n[启动时]\n自动恢复上次打开的文件夹。\n\n[右面板]\n拖动预览和信息区域之间的边界可调整大小\n\n[FullViewer]\n←→↑↓ PgUp/Dn  上一张/下一张图片\nSpace / F11     沉浸模式 ON/OFF\nR               旋转    +/-  缩放\n0               实际大小    S    幻灯片\nEsc/Enter       关闭    Delete  删除\n', "ko": '\n키보드 단축키\n\n[파일 작업]\nCtrl+O          폴더 열기\nF5              새로고침 (다시 불러오기)\nF2              이름 변경\nDelete          휴지통으로 이동 (다중 선택 지원)\nShift+Delete    완전 삭제 (휴지통 사용 안 함)\nCtrl+C          복사 (파일로)\nCtrl+X          잘라내기\nCtrl+V          붙여넣기\nCtrl+Shift+N    새 폴더 만들기\n\n[북마크]\nCtrl+B          북마크 목록 표시\nCtrl+Shift+B    현재 폴더를 북마크에 추가\n\n[선택]\nCtrl+A          전체 선택\nCtrl+D          선택 해제\nCtrl+클릭       개별 추가/해제\nShift+클릭      범위 선택\nShift+화살표    선택 범위 확장\n드래그          사각형 드래그로 범위 선택\nEscape          다중 선택 해제 후 단일 선택으로\n\n[그리드 조작]\n←↑↓→          커서 이동\nPageUp/Down     페이지 단위로 이동\nHome / End      처음 / 끝으로 이동\nEnter           전체 화면 표시\nCtrl+휠         썸네일 크기 변경\n\n[폴더 이동]\nCtrl+Left/Right 이전/다음 폴더\nAlt+Left/Right  이전/다음 폴더\nAlt+Up          상위 폴더로 이동\n\n[표시/정보]\nAlt+Enter       속성\nF1              이 도움말\nCtrl+,          환경 설정\n\n[시작 시]\n지난 번에 열었던 폴더를 자동으로 복원합니다.\n\n[오른쪽 패널]\n미리보기와 정보 영역 경계를 드래그하여 크기 조절\n\n[FullViewer]\n←→↑↓ PgUp/Dn  이전/다음 이미지\nSpace / F11     몰입 모드 ON/OFF\nR               회전    +/-  확대/축소\n0               실제 크기    S    슬라이드쇼\nEsc/Enter       닫기    Delete  삭제\n'},
-    '\nサイズ: ': {"en": '\nSize: ', "zh": '\n大小：', "ko": '\n크기: '},
-    '\n保持する上限を MB で指定してください（古いものから削除されます）。': {"en": '\nEnter the limit to keep in MB (oldest files will be deleted first).', "zh": '\n请以 MB 指定要保留的上限（将从最旧的开始删除）。', "ko": '\n유지할 상한을 MB 단위로 지정하세요 (오래된 것부터 삭제됩니다).'},
-    '\n場所: ': {"en": '\nLocation: ', "zh": '\n位置：', "ko": '\n위치: '},
-    '\n変更先: ': {"en": '\nChange to: ', "zh": '\n更改为：', "ko": '\n변경 대상: '},
-    '\n旧形式 .pkl: ': {"en": '\nLegacy .pkl: ', "zh": '\n旧格式 .pkl：', "ko": '\n구형식 .pkl: '},
-    '\n更新日時: ': {"en": '\nModified: ', "zh": '\n更新时间：', "ko": '\n수정 일시: '},
     'image_quality_sorter.py を読み込めませんでした:\n': {"en": 'Could not load image_quality_sorter.py:\n', "zh": '无法加载 image_quality_sorter.py：\n', "ko": 'image_quality_sorter.py 를 불러올 수 없습니다:\n'},
+    'librosa が未導入のため自動検出できません': {"en": "Cannot auto-detect (librosa not installed)", "zh": "未安装 librosa，无法自动检测", "ko": "librosa 미설치로 자동 감지 불가"},
+    'librosa が未導入のため自動検出は無効です': {"en": "Auto-detect disabled (librosa not installed)", "zh": "未安装 librosa，自动检测已禁用", "ko": "librosa 미설치로 자동 감지 비활성화"},
     'raw 文字列': {"en": 'raw string', "zh": '原始字符串', "ko": 'raw 문자열'},
     'settings.json の `thumb_cache_dir` 指定': {"en": '`thumb_cache_dir` in settings.json', "zh": 'settings.json 中的 `thumb_cache_dir` 指定', "ko": 'settings.json 의 `thumb_cache_dir` 지정'},
     'thumb_mem=メモリヒット / thumb_disk=ディスクサムネ読込 / thumb_decode=デコード+縮小\n': {"en": 'thumb_mem=memory hit / thumb_disk=disk thumbnail read / thumb_decode=decode+resize\n', "zh": 'thumb_mem=内存命中 / thumb_disk=磁盘缩略图读取 / thumb_decode=解码+缩小\n', "ko": 'thumb_mem=메모리 히트 / thumb_disk=디스크 썸네일 읽기 / thumb_decode=디코드+리사이즈\n'},
@@ -510,8 +523,8 @@ _I18N_TABLE = {
     'ファイル名': {"en": 'File name', "zh": '文件名', "ko": '파일 이름'},
     'ファイル名: ': {"en": 'File name: ', "zh": '文件名：', "ko": '파일 이름: '},
     'ファイル情報・メタ': {"en": 'File info / meta', "zh": '文件信息・元数据', "ko": '파일 정보·메타'},
-    'フォルダが見つかりません: ': {"en": 'Folder not found: ', "zh": '未找到文件夹：', "ko": '폴더를 찾을 수 없습니다: '},
     'フォルダが見つかりません:\n': {"en": 'Folder not found:\n', "zh": '未找到文件夹：\n', "ko": '폴더를 찾을 수 없습니다:\n'},
+    'フォルダが見つかりません: ': {"en": 'Folder not found: ', "zh": '未找到文件夹：', "ko": '폴더를 찾을 수 없습니다: '},
     'フォルダを作成しました: ': {"en": 'Folder created: ', "zh": '已创建文件夹：', "ko": '폴더를 만들었습니다: '},
     'フォルダを選択': {"en": 'Select folder', "zh": '选择文件夹', "ko": '폴더 선택'},
     'フォルダを開けません': {"en": 'Cannot open folder', "zh": '无法打开文件夹', "ko": '폴더를 열 수 없습니다'},
@@ -569,6 +582,7 @@ _I18N_TABLE = {
     '不明なエラー': {"en": 'Unknown error', "zh": '未知错误', "ko": '알 수 없는 오류'},
     '並び替えの基準': {"en": 'Sort basis', "zh": '排序依据', "ko": '정렬 기준'},
     '中': {"en": 'Medium', "zh": '中', "ko": '중'},
+    '中央値 {0} BPM / {1}曲検出': {"en": "Median {0} BPM / {1} tracks", "zh": "中位数 {0} BPM / 检测 {1} 曲", "ko": "중앙값 {0} BPM / {1}곡 감지"},
     '以下の ': {"en": 'The following ', "zh": '以下 ', "ko": '다음 '},
     '件': {"en": ' items', "zh": ' 件', "ko": ' 개'},
     '件  /  画像 ': {"en": ' items  /  images ', "zh": ' 件  /  图片 ', "ko": ' 개  /  이미지 '},
@@ -705,6 +719,7 @@ _I18N_TABLE = {
     '枚でスキャン完了  ': {"en": 'images scanned  (', "zh": ' 张扫描完成  （', "ko": ' 장으로 스캔 완료  ('},
     '枚でスキャン完了  (未使用 ': {"en": ' images scanned  (unused ', "zh": ' 张扫描完成  （未使用 ', "ko": ' 장으로 스캔 완료  (미사용 '},
     '枚選択中': {"en": ' images selected', "zh": ' 张已选中', "ko": ' 장 선택 중'},
+    '検出可能な BPM がありません': {"en": "No detectable BPM found", "zh": "未检测到可用 BPM", "ko": "감지 가능한 BPM 없음"},
     '検査: ': {"en": 'Inspection: ', "zh": '检查：', "ko": '검사: '},
     '検索: タグ / ファイル名 / -除外 / "完全一致"': {"en": 'Search: tags / file name / -exclude / "exact"', "zh": '搜索：标签 / 文件名 / -排除 / "完全一致"', "ko": '검색: 태그 / 파일 이름 / -제외 / "완전 일치"'},
     '検索バーの入力を正規表現として扱います。\n不正な式の場合は警告を表示し、通常の部分一致検索にフォールバックします。': {"en": 'Treats the search bar input as a regular expression.\nIf the expression is invalid, shows a warning and falls back to normal partial matching.', "zh": '将搜索栏输入作为正则表达式处理。\n如果表达式无效，将显示警告并回退为普通部分匹配搜索。', "ko": '검색 바 입력을 정규식으로 처리합니다.\n잘못된 식이면 경고를 표시하고 일반 부분 일치 검색으로 돌아갑니다.'},
@@ -754,6 +769,10 @@ _I18N_TABLE = {
     '表示枚数 / 総枚数': {"en": 'Shown / total', "zh": '显示数量 / 总数量', "ko": '표시 수 / 전체 수'},
     '表示言語': {"en": 'Display language', "zh": '显示语言', "ko": '표시 언어'},
     '解像度': {"en": 'Resolution', "zh": '分辨率', "ko": '해상도'},
+    '解析中 0/{0}...': {"en": "Analyzing 0/{0}...", "zh": "解析中 0/{0}...", "ko": "분석 중 0/{0}..."},
+    '解析中 {0}/{1}...': {"en": "Analyzing {0}/{1}...", "zh": "解析中 {0}/{1}...", "ko": "분석 중 {0}/{1}..."},
+    '解析中 {0}/{1}: {2}': {"en": "Analyzing {0}/{1}: {2}", "zh": "解析中 {0}/{1}: {2}", "ko": "분석 중 {0}/{1}: {2}"},
+    '解析可能な音楽ファイルがありません': {"en": "No analyzable audio files", "zh": "没有可解析的音频文件", "ko": "분석 가능한 오디오 파일이 없습니다"},
     '言語': {"en": 'Language', "zh": '语言', "ko": '언어'},
     '計 ': {"en": 'Total ', "zh": '合计 ', "ko": '합계 '},
     '設定(&S)': {"en": 'Settings(&S)', "zh": '设置(&S)', "ko": '설정(&S)'},
@@ -806,6 +825,7 @@ _I18N_TABLE = {
     '🌐 Civitai で開く': {"en": '🌐 Open on Civitai', "zh": '🌐 在 Civitai 上打开', "ko": '🌐 Civitai 에서 열기'},
     '🎨 ロゴ/タグ連動設定': {"en": '🎨 Logo/tag linkage settings', "zh": '🎨 Logo/标签联动设置', "ko": '🎨 로고/태그 연동 설정'},
     '🎨 ロゴオーバーレイ': {"en": '🎨 Logo overlay', "zh": '🎨 Logo 叠加', "ko": '🎨 로고 오버레이'},
+    '🎵 自動検出': {"en": "🎵 Auto-detect", "zh": "🎵 自动检测", "ko": "🎵 자동 감지"},
     '🎵 音楽': {"en": "🎵 Music", "zh": "🎵 音乐", "ko": "🎵 음악"},
     '🏷 タグ一覧': {"en": '🏷 Tag list', "zh": '🏷 标签列表', "ko": '🏷 태그 목록'},
     '👀 このグループを表示': {"en": '👀 Show this group', "zh": '👀 显示此分组', "ko": '👀 이 그룹 표시'},
@@ -6283,6 +6303,127 @@ class LoraStatsWindow(QDialog):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+#  BPM 自動検出 (v2.30) — librosa 遅延 import + JSON キャッシュ
+# ══════════════════════════════════════════════════════════════════════════════
+BPM_CACHE_FILE = APP_DIR / "bpm_cache.json"
+_bpm_cache: dict | None = None
+_bpm_cache_lock = threading.Lock()
+
+def _load_bpm_cache() -> dict:
+    """bpm_cache.json を読み込む。壊れていれば空 dict。"""
+    global _bpm_cache
+    if _bpm_cache is not None:
+        return _bpm_cache
+    try:
+        if BPM_CACHE_FILE.exists():
+            with open(BPM_CACHE_FILE, encoding="utf-8") as f:
+                _bpm_cache = json.load(f)
+        else:
+            _bpm_cache = {}
+    except Exception:
+        _bpm_cache = {}
+    return _bpm_cache
+
+
+def _save_bpm_cache() -> None:
+    """bpm_cache.json に原子的に書き出す（QSaveFile 相当の tmp+rename）。"""
+    if _bpm_cache is None:
+        return
+    try:
+        tmp = BPM_CACHE_FILE.with_suffix(".json.tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(_bpm_cache, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, BPM_CACHE_FILE)
+    except Exception:
+        pass
+
+
+def detect_bpm(path: str, sample_sec: int = 30, use_cache: bool = True) -> int | None:
+    """librosa で BPM を推定。先頭 sample_sec 秒だけ読む（89 分メドレーでも数秒）。
+    戻り値: 推定 BPM (int)、検出失敗 or librosa 無しなら None。
+    キャッシュは mtime + size が一致すれば再利用。"""
+    if not HAS_LIBROSA:
+        return None
+    try:
+        st = os.stat(path)
+    except OSError:
+        return None
+    with _bpm_cache_lock:
+        cache = _load_bpm_cache()
+        if use_cache:
+            ent = cache.get(path)
+            if ent and ent.get("mtime") == st.st_mtime and ent.get("size") == st.st_size:
+                try:
+                    return int(ent["bpm"])
+                except (TypeError, ValueError):
+                    pass
+    try:
+        import librosa
+        import numpy as np
+        y, sr = librosa.load(path, sr=22050, mono=True, duration=sample_sec)
+        if len(y) < sr:
+            return None
+        tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
+        bpm = int(round(float(np.atleast_1d(tempo)[0])))
+        if bpm <= 0 or bpm > 300:
+            return None
+    except Exception:
+        return None
+    with _bpm_cache_lock:
+        cache = _load_bpm_cache()
+        cache[path] = {"mtime": st.st_mtime, "size": st.st_size, "bpm": bpm}
+        _save_bpm_cache()
+    return bpm
+
+
+class _BpmDetectWorker(QThread):
+    """BGM フォルダ内の複数曲を順に librosa で BPM 解析するワーカースレッド。
+    detect_bpm 自体は内部でロック付きキャッシュ更新を行うので、ここでは逐次呼出のみ。
+    """
+    progress = Signal(int, int, str)        # (done, total, current_path)
+    finished_all = Signal(list, int)        # (bpm_list, median_bpm)
+    failed = Signal(str)                    # (error_msg)
+
+    def __init__(self, paths: list[str], parent=None):
+        super().__init__(parent)
+        self._paths = list(paths)
+        self._cancelled = False
+
+    def cancel(self):
+        self._cancelled = True
+
+    def run(self):
+        bpms: list[int] = []
+        total = len(self._paths)
+        for i, p in enumerate(self._paths):
+            if self._cancelled:
+                return
+            self.progress.emit(i, total, p)
+            bpm = detect_bpm(p)
+            if bpm is not None:
+                bpms.append(bpm)
+        if self._cancelled:
+            return
+        self.progress.emit(total, total, "")
+        if not bpms:
+            self.failed.emit(T("検出可能な BPM がありません"))
+            return
+        median = int(round(np_median(bpms)))
+        self.finished_all.emit(bpms, median)
+
+
+def np_median(values: list[int]) -> float:
+    """numpy 無しで中央値。偶数件なら中央 2 件の平均。"""
+    s = sorted(values)
+    n = len(s)
+    if n == 0:
+        return 0.0
+    if n % 2 == 1:
+        return float(s[n // 2])
+    return (s[n // 2 - 1] + s[n // 2]) / 2.0
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 #  設定ダイアログ
 # ══════════════════════════════════════════════════════════════════════════════
 class SettingsDialog(QDialog):
@@ -6413,7 +6554,23 @@ class SettingsDialog(QDialog):
             self._ss_bgm_bpm.setRange(0, 300)
             self._ss_bgm_bpm.setValue(int(self._cfg.get("ss_bgm_bpm", 120)))
             self._ss_bgm_bpm.setSpecialValueText(T("無効"))
-            bgm_form.addRow(T("BPM (0=無効):"), self._ss_bgm_bpm)
+            # 自動検出ボタン + 結果ラベル (v2.30)
+            self._ss_bgm_auto_btn = QPushButton(T("🎵 自動検出"))
+            self._ss_bgm_auto_btn.clicked.connect(self._on_auto_detect_bpm)
+            self._ss_bgm_bpm_result = QLabel("")
+            self._ss_bgm_bpm_result.setStyleSheet(f"color:{PAL['fg3']};font-size:8pt;")
+            if not HAS_LIBROSA:
+                self._ss_bgm_auto_btn.setEnabled(False)
+                self._ss_bgm_auto_btn.setToolTip(T("librosa が未導入のため自動検出は無効です"))
+            else:
+                self._ss_bgm_auto_btn.setToolTip(T("BGMフォルダ内の全曲を解析して中央値 BPM を設定"))
+            bpm_row = QHBoxLayout()
+            bpm_row.addWidget(self._ss_bgm_bpm)
+            bpm_row.addWidget(self._ss_bgm_auto_btn)
+            bpm_row.addWidget(self._ss_bgm_bpm_result, 1)
+            bpm_row.addStretch()
+            bgm_form.addRow(T("BPM (0=無効):"), bpm_row)
+            self._bpm_worker: _BpmDetectWorker | None = None
             self._ss_bgm_beat = QComboBox()
             for b in (1, 2, 4, 8):
                 self._ss_bgm_beat.addItem(f"{b} {T('拍')}", b)
@@ -6479,11 +6636,77 @@ class SettingsDialog(QDialog):
         p = QFileDialog.getExistingDirectory(self, T("音声・セリフフォルダを選択"))
         if p: self._ss_voice_edit.setText(p)
 
+    # ── BPM 自動検出 (v2.30) ──────────────────────────────────────────────
+    def _on_auto_detect_bpm(self):
+        if not HAS_LIBROSA:
+            QMessageBox.warning(self, T("BPM 自動検出"), T("librosa が未導入のため自動検出できません"))
+            return
+        if self._bpm_worker is not None and self._bpm_worker.isRunning():
+            return  # 解析中は無視
+        folder = self._ss_bgm_edit.text().strip()
+        if not folder or not os.path.isdir(folder):
+            QMessageBox.warning(self, T("BPM 自動検出"), T("BGMフォルダが設定されていません"))
+            return
+        paths = []
+        try:
+            for name in os.listdir(folder):
+                ext = os.path.splitext(name)[1].lower()
+                if ext in (".mp3", ".wav", ".flac", ".ogg", ".m4a", ".aac", ".opus"):
+                    full = os.path.join(folder, name)
+                    if os.path.isfile(full):
+                        paths.append(full)
+        except OSError as e:
+            QMessageBox.critical(self, T("BPM 自動検出"), str(e))
+            return
+        if not paths:
+            QMessageBox.information(self, T("BPM 自動検出"), T("解析可能な音楽ファイルがありません"))
+            return
+        self._ss_bgm_auto_btn.setEnabled(False)
+        self._ss_bgm_bpm_result.setText(T("解析中 0/{0}...").format(len(paths)))
+        self._bpm_worker = _BpmDetectWorker(paths, self)
+        self._bpm_worker.progress.connect(self._on_bpm_progress)
+        self._bpm_worker.finished_all.connect(self._on_bpm_done)
+        self._bpm_worker.failed.connect(self._on_bpm_failed)
+        self._bpm_worker.start()
+
+    def _on_bpm_progress(self, done: int, total: int, current_path: str):
+        name = os.path.basename(current_path) if current_path else ""
+        if name:
+            self._ss_bgm_bpm_result.setText(
+                T("解析中 {0}/{1}: {2}").format(done, total, name[:30]))
+        else:
+            self._ss_bgm_bpm_result.setText(T("解析中 {0}/{1}...").format(done, total))
+
+    def _on_bpm_done(self, bpms: list, median: int):
+        self._ss_bgm_auto_btn.setEnabled(HAS_LIBROSA)
+        self._ss_bgm_bpm_result.setText(
+            T("中央値 {0} BPM / {1}曲検出").format(median, len(bpms)))
+        self._ss_bgm_bpm.setValue(max(0, min(300, median)))
+        self._bpm_worker = None
+
+    def _on_bpm_failed(self, msg: str):
+        self._ss_bgm_auto_btn.setEnabled(HAS_LIBROSA)
+        self._ss_bgm_bpm_result.setText(f"⚠ {msg}")
+        self._bpm_worker = None
+
+    def reject(self):
+        # [v2.30] キャンセル時も BPM ワーカを止める
+        if self._bpm_worker is not None and self._bpm_worker.isRunning():
+            self._bpm_worker.cancel()
+            self._bpm_worker.wait(3000)
+            self._bpm_worker = None
+        super().reject()
+
     def _clear_cache(self):
         clear_cache()
         QMessageBox.information(self, T("完了"), T("サムネキャッシュを削除しました"))
 
     def _save(self):
+        # [v2.30] BPM 解析ワーカが動いていれば止めてから保存
+        if self._bpm_worker is not None and self._bpm_worker.isRunning():
+            self._bpm_worker.cancel()
+            self._bpm_worker.wait(3000)
+            self._bpm_worker = None
         self._result_loop = "loop" if self._rb_loop.isChecked() else "stop"
         new_exts = [ext for ext, cb in self._ext_cbs.items() if cb.isChecked()]
         if not new_exts: new_exts = [".png"]
