@@ -1,5 +1,7 @@
 # Diffusion Gallery
 
+🌐 [English](README.en.md) · **日本語** · [简体中文](README.zh-CN.md) · [한국어](README.ko.md)
+
 Stable Diffusion などの AI 生成画像を整理・閲覧するためのビューワーソフトです（旧名: PNG Metadata Viewer）。
 
 PNG を中心に、メタデータ表示、LoRA 管理、サムネイル一覧、タグ集計、重複検出、ロゴオーバーレイまでを 1 つのデスクトップアプリにまとめています。
