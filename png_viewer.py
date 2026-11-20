@@ -224,7 +224,7 @@ except Exception:
 # ══════════════════════════════════════════════════════════════════════════════
 #  定数・設定
 # ══════════════════════════════════════════════════════════════════════════════
-APP_VERSION  = "v2.38.6"
+APP_VERSION  = "v2.38.7"
 APP_NAME     = "Diffusion Gallery"
 VOLUME_MAX   = 400   # voice 音量スライダー上限(%)。100超は再生前 PCM 増幅(temp)で実現
 APP_AUTHOR   = "nemot"
@@ -4526,6 +4526,24 @@ class VirtualGrid(QWidget):
 
     @Slot(str, Qt.KeyboardModifier)
     def _on_cell_click(self, path: str, mods):
+        # [v2.38.7] 一時的計装: クリック→実際にハイライトが描画されるまでの実時間
+        _t0 = time.perf_counter()
+        _mw = self.window()
+        _cell = self._visible_cells.get(path)
+        if _cell is not None and hasattr(_mw, "_perf"):
+            def _after_paint(_c=_cell, _w=_mw, _start=_t0):
+                try:
+                    _c.repaintFinished.disconnect(_after_paint)
+                except Exception:
+                    pass
+                try:
+                    _w._perf("クリック→ハイライト描画", (time.perf_counter() - _start) * 1000)
+                except Exception:
+                    pass
+            try:
+                _cell.repaintFinished.connect(_after_paint)
+            except Exception:
+                pass
         ctrl  = bool(mods & Qt.KeyboardModifier.ControlModifier)
         shift = bool(mods & Qt.KeyboardModifier.ShiftModifier)
         idx   = self._pos.get(path, -1)
@@ -4946,6 +4964,8 @@ class FullViewer(QDialog):
         self._stripe_px = None      # [v2.35] 合成 QPixmap（サイズが変わった時だけ再生成）
         self._anim_state = None  # dict | None 進行中のトランジション情報
         self._shown_once = False  # [v2.35] 初回は遷移せず即時確定（残骸防止）
+        self._open_t0 = None      # [v2.38.7] 一時的計装: ダブルクリックからの起点
+        self._shown_logged = False
         self._cur_path = None  # [v2.35.2] 表示中の画像パス（同じ画像の再表示では遷移しない）
         self._slide_dir = 1  # [v2.35.3] スライド方向: 1=次へ / -1=前へ（左右上下で反転）
         self._anim_timer = QTimer(self)
@@ -5406,6 +5426,13 @@ class FullViewer(QDialog):
             self._commit_new(px)
         self._cur_path = path
         self._shown_once = True
+        # [v2.38.7] 一時的計装: ダブルクリック→初回画像が実際に描画されるまで
+        _t0 = getattr(self, "_open_t0", None)
+        if _t0 is not None and not getattr(self, "_shown_logged", False):
+            self._shown_logged = True
+            _mw = self.parent()
+            if hasattr(_mw, "_perf"):
+                _mw._perf(" dbl→初回画像表示", (time.perf_counter() - _t0) * 1000)
         try:
             st = os.stat(path)
             mode = T("実寸") if self._fit_mode == "actual" else "fit"
@@ -11424,6 +11451,7 @@ class MainWindow(QMainWindow):
     def _sel_image_deferred(self, path: str, seq: int):
         if getattr(self, "_sel_defer_seq", 0) != seq or self._sel_path != path:
             return
+        _t0 = time.perf_counter()  # [v2.38.7] 一時的計装
 
         # メタ取得: キャッシュにあれば即更新、なければ非同期で後から更新（UIブロックなし）
         cached = META.peek(path)
@@ -11436,6 +11464,7 @@ class MainWindow(QMainWindow):
             OVERLAY.auto_apply(path, meta.get("prompt", ""))
             self._meta_panel.show_meta(path, meta, self._ratings)
         else:
+            self._meta_req_t0 = time.perf_counter()  # [v2.38.7] 一時的計装
             self._meta_panel.show_loading(path)
             # [v2.05 FIX] T5: QThreadPool でスレッド無制限生成を防止
             from PySide6.QtCore import QRunnable
@@ -11458,6 +11487,7 @@ class MainWindow(QMainWindow):
         self._update_preview(path)
         if hasattr(self, "_layout_preview") and self._layout_preview:
             self._layout_update_preview(path)
+        self._perf("クリック→メタ/プレビュー反映", (time.perf_counter() - _t0) * 1000)
 
     @Slot(str, dict)
     def _on_meta_loaded(self, path: str, meta: dict):
@@ -11471,6 +11501,10 @@ class MainWindow(QMainWindow):
         had_overlay = OVERLAY.get(path) is not None
         OVERLAY.auto_apply(path, m.get("prompt", ""))
         self._meta_panel.show_meta(path, m, self._ratings)
+        _mt0 = getattr(self, "_meta_req_t0", None)
+        if _mt0 is not None:
+            self._meta_req_t0 = None
+            self._perf("クリック→META読込(非同期)", (time.perf_counter() - _mt0) * 1000)
         if not had_overlay and OVERLAY.get(path):
             self._overlay_refresh_preview([path])
 
@@ -11478,9 +11512,12 @@ class MainWindow(QMainWindow):
         if self._full_viewer and self._full_viewer.isVisible(): return
         paths = self._filtered if self._filtered else self._all_paths
         start_max = self._cfg.get("fullviewer_maximized", False)
+        _t0 = time.perf_counter()  # [v2.38.7] 一時的計装
         self._full_viewer = FullViewer(
             self, path, paths, self._loop_mode,
             start_maximized=start_max)
+        self._full_viewer._open_t0 = _t0
+        self._perf("ビュアー構築", (time.perf_counter() - _t0) * 1000)
 
         def _on_fv_closed():
             # 閉じた時点の最大化状態を保存
@@ -13960,6 +13997,15 @@ class MainWindow(QMainWindow):
         """アクティビティログに記録する。コンソール未初期化時は無視。"""
         if hasattr(self, "_console"):
             self._console.log(message, level, elapsed_ms)
+
+    def _perf(self, label: str, ms: float):
+        """[v2.38.7] 一時的な処理時間ロガー。環境設定 `perf_log`(既定 True) で無効化可。
+        大量表示時のクリック／ビュアー表示の遅延箇所を実機で特定するための計装。"""
+        try:
+            if self._cfg.get("perf_log", True):
+                self._log(f"[perf] {label} {ms:.0f}ms", _ConsolePanel.LEVEL_INFO)
+        except Exception:
+            pass
 
     def _set_status(self, text: str, prog: int | None = None):
         if text and not text.startswith("  "):
