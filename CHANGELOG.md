@@ -4,6 +4,22 @@ PNG/画像メタデータビューア (PySide6版) — 更新履歴
 
 ---
 
+## [v2.38.5] 2026-11-21
+
+### 新機能（🔊 ポップアップにトラックのランダム再生トグル）
+- **要望**: トラックのランダム再生を ON/OFF できるチェックボタンを 🔊 ポップアップに追加。
+- **設定キー**: `ss_audio_random`（既定 **True** で従来どおりシャッフル再生を維持）。OFF にすると同じフォルダ内をファイル名順（大文字小文字区別なし）でループ。
+- **スキャン**: `_scan_audio_folder` が `ss_audio_random` を読むよう変更 [png_viewer.py:5862 付近]。並び替えは `_order_paths(paths, randomize)`（staticmethod）に集約。
+- **実行中切替**: `_set_audio_random(flag)` を追加 [png_viewer.py:6120 付近]。cfg 保存 + BGM/音声 両キューを `_reorder_queue` で再整列。**現在再生中の曲は先頭（idx=0）に固定**するので再生は途切れず、次の曲送りから新しい順序が適用される。
+- **UI**: 音声グループの下に `🔀 トラックをランダム再生` チェックボックス（`_pop_random`）を新設、`stateChanged → _set_audio_random`。ポップアップを開くたびに cfg からチェック状態を再反映。
+- **i18n**: 新規ラベル/ツールチップ 2 キーを `_I18N_TABLE` に ja/en/zh/ko 登録。
+- `APP_VERSION` を v2.38.4 → **v2.38.5**。
+
+### 検証
+- `.tmp/smoke_v238_5.py`（**15 check**）: `_order_paths` の OFF=名順/ON=同一集合、`_reorder_queue` が再生中を先頭固定＆残りを並び替え、空キュー無変更、`_scan` の cfg 参照、ポップアップの checkbox 生成と接続・開時リフレッシュ、i18n 2キー×3言語、既定 True。加えて offscreen で `_build_volume_popup` 生成とトグル→cfg、実キューでの `_set_audio_random` 動作（再生中=先頭維持・要素保存・playing_path と idx 一致）を実測 PASS。既存 smoke（v2.38.1〜4）も回帰。`py_compile` OK。
+
+---
+
 ## [v2.38.4] 2026-11-21
 
 ### 変更（環境設定の音量スライダーを廃止）

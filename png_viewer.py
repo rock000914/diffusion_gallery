@@ -224,7 +224,7 @@ except Exception:
 # ══════════════════════════════════════════════════════════════════════════════
 #  定数・設定
 # ══════════════════════════════════════════════════════════════════════════════
-APP_VERSION  = "v2.38.4"
+APP_VERSION  = "v2.38.5"
 APP_NAME     = "Diffusion Gallery"
 VOLUME_MAX   = 400   # voice 音量スライダー上限(%)。100超は再生前 PCM 増幅(temp)で実現
 APP_AUTHOR   = "nemot"
@@ -395,6 +395,7 @@ _I18N_TABLE = {
     'MB 以下なので削除不要です。': {"en": ' MB or less, nothing to delete.', "zh": ' MB 以下，无需删除。', "ko": ' MB 이하이므로 삭제할 필요가 없습니다.'},
     'MB（現行コードは読まない残骸）': {"en": ' MB (remnants not read by current code)', "zh": ' MB（当前代码不读取的残留）', "ko": ' MB (현재 코드가 읽지 않는 잔여물)'},
     'MB（現行コードは読みません）': {"en": ' MB (not read by current code)', "zh": ' MB（当前代码不读取）', "ko": ' MB (현재 코드가 읽지 않음)'},
+    'ON: シャッフル順 / OFF: ファイル名順で再生': {"en": "ON: shuffle order / OFF: by file name", "zh": "开启：乱序播放 / 关闭：按文件名顺序播放", "ko": "켜면 셔플 순 / 끄면 파일명 순 재생"},
     'PNGではありません': {"en": 'Not a PNG', "zh": '不是 PNG', "ko": 'PNG가 아닙니다'},
     'Pillow が見つかりません。pip install Pillow を実行してください。': {"en": 'Pillow not found. Run: pip install Pillow', "zh": '未找到 Pillow。请执行 pip install Pillow', "ko": 'Pillow를 찾을 수 없습니다. pip install Pillow 를 실행하세요.'},
     'PySide6 版 — tkinter 版 v11 を完全書き直し<br>': {"en": 'PySide6 version — complete rewrite of the tkinter version v11<br>', "zh": 'PySide6 版 — 完全重写了 tkinter 版 v11<br>', "ko": 'PySide6 버전 — tkinter 버전 v11을 완전히 재작성<br>'},
@@ -923,6 +924,7 @@ _I18N_TABLE = {
     '📐 ロゴ位置・サイズ調整': {"en": '📐 Logo position / size adjustment', "zh": '📐 Logo 位置・大小调整', "ko": '📐 로고 위치·크기 조정'},
     '📐 位置・サイズ調整...': {"en": '📐 Position / size adjustment...', "zh": '📐 位置・大小调整...', "ko": '📐 위치·크기 조정...'},
     '📥 貼り付け  Ctrl+V': {"en": '📥 Paste  Ctrl+V', "zh": '📥 粘贴  Ctrl+V', "ko": '📥 붙여넣기  Ctrl+V'},
+    '🔀 トラックをランダム再生': {"en": "🔀 Shuffle tracks", "zh": "🔀 随机播放曲目", "ko": "🔀 트랙 랜덤 재생"},
     '🔄 再分析': {"en": '🔄 Re-analyze', "zh": '🔄 重新分析', "ko": '🔄 재분석'},
     '🔄 再読み込み': {"en": '🔄 Reload', "zh": '🔄 重新读取', "ko": '🔄 다시 불러오기'},
     '🔍 この画像で絞り込み': {"en": '🔍 Filter by this image', "zh": '🔍 按此图片筛选', "ko": '🔍 이 이미지로 필터링'},
@@ -5860,8 +5862,8 @@ class FullViewer(QDialog):
             self._voice_queue = self._scan_audio_folder(voice_folder)
 
     def _scan_audio_folder(self, folder: str) -> list[str]:
-        """フォルダ内の音楽ファイルを列挙して shuffle したパスリストを返す。
-        再帰はしない（1階層のみ）。"""
+        """フォルダ内の音楽ファイルを列挙したパスリストを返す。再帰はしない（1階層のみ）。
+        [v2.38.5] ss_audio_random(既定 True)なら shuffle、OFF はファイル名順に整列。"""
         try:
             entries = os.listdir(folder)
         except OSError:
@@ -5873,8 +5875,16 @@ class FullViewer(QDialog):
                 full = os.path.join(folder, name)
                 if os.path.isfile(full):
                     out.append(full)
-        random.shuffle(out)
+        self._order_paths(out, bool(self._audio_cfg("ss_audio_random", True)))
         return out
+
+    @staticmethod
+    def _order_paths(paths: list, randomize: bool):
+        """paths をその場で並び替える。randomize=True→shuffle、False→ファイル名順。"""
+        if randomize:
+            random.shuffle(paths)
+        else:
+            paths.sort(key=lambda p: os.path.basename(p).lower())
 
     def _ensure_audio_players(self):
         """初回 ON 時に QMediaPlayer + QAudioOutput を作成。2 系統独立。"""
@@ -6110,6 +6120,34 @@ class FullViewer(QDialog):
                 pass
         return rate
 
+    def _set_audio_random(self, flag: bool):
+        """[v2.38.5] トラックのランダム再生 ON/OFF を切替。cfg 保存し、
+        実行中キューを再整列する（現在再生中の曲は先頭に残すので再生は途切れない）。"""
+        flag = bool(flag)
+        mw = self.parent()
+        if mw is not None and hasattr(mw, "_cfg"):
+            try:
+                mw._cfg["ss_audio_random"] = flag
+                save_cfg(mw._cfg)
+            except Exception:
+                pass
+        self._reorder_queue("_bgm_queue", "_bgm_idx", flag)
+        self._reorder_queue("_voice_queue", "_voice_idx", flag)
+
+    def _reorder_queue(self, q_attr: str, idx_attr: str, randomize: bool):
+        """指定キューをランダム/ファイル名順へ並び替え、再生中の曲を先頭(idx=0)に固定。
+        キューが空なら何もしない。"""
+        q = getattr(self, q_attr, None)
+        if not q:
+            return
+        i = getattr(self, idx_attr, 0)
+        cur = q[i] if 0 <= i < len(q) else None
+        rest = [p for p in q if p != cur]
+        self._order_paths(rest, randomize)
+        newq = ([cur] + rest) if cur is not None else rest
+        setattr(self, q_attr, newq)
+        setattr(self, idx_attr, 0 if cur is not None else i)
+
     def _get_volume(self, kind: str) -> int:
         return int(self._audio_cfg(f"ss_{kind}_volume", 80 if kind == "bgm" else 100))
 
@@ -6173,6 +6211,7 @@ class FullViewer(QDialog):
         self._pop_voice_vol.setValue(int(self._audio_cfg("ss_voice_volume", 100)))
         self._pop_bgm_speed.setValue(float(self._audio_cfg("ss_bgm_speed", 1.0)))
         self._pop_voice_speed.setValue(float(self._audio_cfg("ss_voice_speed", 1.0)))
+        self._pop_random.setChecked(bool(self._audio_cfg("ss_audio_random", True)))
         # [v2.32.3] 位置決定前にサイズを確定させ、画面右/下へのはみ出しをクランプ。
         # 🔊 ボタンはツールバー右端にあるため、無補正だとポップアップが画面外に
         # 逃げ、スライダーのノブや速度スピンが見えなかった（v2.32 のバグ）。
@@ -6249,6 +6288,19 @@ class FullViewer(QDialog):
         voice_row.addWidget(QLabel(T("速度")), 0)
         voice_row.addWidget(self._pop_voice_speed, 0)
         root.addLayout(voice_row)
+
+        # [v2.38.5] トラックのランダム再生トグル（BGM・音声 両キューに適用）
+        rand_row = QHBoxLayout()
+        self._pop_random = QCheckBox(T("🔀 トラックをランダム再生"))
+        self._pop_random.setChecked(bool(self._audio_cfg("ss_audio_random", True)))
+        self._pop_random.setStyleSheet(f"QCheckBox{{color:{PAL['fg1']};}}")
+        self._pop_random.setToolTip(T("ON: シャッフル順 / OFF: ファイル名順で再生"))
+        self._pop_random.stateChanged.connect(
+            lambda st: self._set_audio_random(bool(st)))
+        rand_row.addStretch(0)
+        rand_row.addWidget(self._pop_random)
+        rand_row.addStretch(1)
+        root.addLayout(rand_row)
 
         hint = QLabel(T("※ ホットキー: [ ] = BGM ±5%, { } = 音声 ±5%"))
         hint.setStyleSheet(f"color:{PAL['fg3']};font-size:8pt;")
