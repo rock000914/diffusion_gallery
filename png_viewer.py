@@ -353,6 +353,10 @@ _I18N_TABLE = {
     'CSVを出力しました:\n': {"en": 'CSV exported:\n', "zh": '已导出 CSV：\n', "ko": 'CSV 출력 완료:\n'},
     'CSV出力': {"en": 'CSV export', "zh": 'CSV 导出', "ko": 'CSV 출력'},
     'Civitaiで検索': {"en": 'Search on Civitai', "zh": '在 Civitai 上搜索', "ko": 'Civitai에서 검색'},
+    '系統をタグ付け': {"en": 'Tag base model', "zh": '标记基础模型', "ko": '베이스 모델 태그'},
+    '自動判定に戻す（登録解除）': {"en": 'Reset to auto (unregister)', "zh": '恢复自动判定（取消注册）', "ko": '자동 판정 복원(등록 해제)'},
+    '右クリックで系統をタグ付け': {"en": 'Right-click to tag the base model', "zh": '右键点击以标记基础模型', "ko": '우클릭으로 베이스 모델을 태그합니다'},
+    '自動判定': {"en": 'Auto', "zh": '自动判定', "ko": '자동'},
     'F': {"en": 'F', "zh": 'F', "ko": 'F'},
     'F1 キーボードショートカット': {"en": 'F1 Keyboard shortcuts', "zh": 'F1 键盘快捷键', "ko": 'F1 키보드 단축키'},
     'GB\n現行形式 .raw: ': {"en": 'GB\nCurrent .raw format: ', "zh": 'GB\n当前格式 .raw：', "ko": 'GB\n현재 형식 .raw: '},
@@ -7838,6 +7842,8 @@ class MetaPanel(QWidget):
     # MainWindow._build_right_panel で self._set_status に接続される。
     # このシグナルを削除するとコピーボタン押下後のステータスバー表示が失われる。
     status_message       = Signal(str)   # ステータスバーへのメッセージ通知
+    # [v2.36] モデル欄の右クリックで系統を手動タグ付け → MainWindow で registry へ保存
+    lineage_set_requested = Signal(str, object)   # (model, family_id or None=解除)
 
     # セクション名 → 開閉状態を記憶（クラス変数でインスタンス間共有）
 
@@ -8292,6 +8298,9 @@ class MetaPanel(QWidget):
         self._meta_layout.addWidget(_make_row(T("モデル"), clickable=True, with_civ=True))
         self._meta_civ_btns[T("モデル")].clicked.connect(
             lambda checked=False: civitai_open_lora(self._meta_val_labels[T("モデル")].text(), ""))
+        _mdl_lbl = self._meta_val_labels[T("モデル")]
+        _mdl_lbl.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        _mdl_lbl.customContextMenuRequested.connect(self._show_lineage_menu)
         for key in ["Steps", "CFG", "Sampler"]:
             self._meta_layout.addWidget(_make_row(key))
         # Seed: クリックでコピー（PointerHandCursor + click）
@@ -8303,6 +8312,34 @@ class MetaPanel(QWidget):
 
         # LoRA 動的行のリスト
         self._meta_lora_rows: list = []
+
+    def _show_lineage_menu(self, pos):
+        """モデル欄の右クリックで、そのモデル名に系統タグを manual 設定する。
+        選択は MainWindow の lineage_set_requested → registry(model_lineage) へ保存される。"""
+        lbl = self._meta_val_labels.get(T("モデル"))
+        if lbl is None:
+            return
+        model = (lbl.text() or "").strip()
+        if not model or model == "—":
+            return
+        cur = resolve_lineage(model)
+        menu = QMenu(self)
+        head = menu.addAction(T("系統をタグ付け"))
+        head.setEnabled(False)
+        for k, text in BASE_MODEL_GROUPS:
+            if not k:
+                continue
+            act = menu.addAction(text)
+            act.setCheckable(True)
+            act.setChecked(k == cur)
+            act.triggered.connect(
+                lambda checked, fam=k, m=model: self.lineage_set_requested.emit(m, fam))
+        menu.addSeparator()
+        reset = menu.addAction(T("自動判定に戻す（登録解除）"))
+        reset.setEnabled(model in (self._cfg.get("model_lineage") or {}))
+        reset.triggered.connect(
+            lambda checked=False, m=model: self.lineage_set_requested.emit(m, None))
+        menu.exec(lbl.mapToGlobal(pos))
 
     def _update_meta_rows(self, path: str, meta: dict):
         """固定行の値を差分更新し、LoRA行だけ再生成する（初回は _init_meta_rows を呼ぶ）。"""
@@ -8324,6 +8361,10 @@ class MetaPanel(QWidget):
         model = meta.get("model","")
         model_lbl = lbl[T("モデル")]
         model_lbl.setText(model or "—")
+        if model:
+            _fam = resolve_lineage(model)
+            _flbl = dict(BASE_MODEL_GROUPS).get(_fam, _fam or "—")
+            model_lbl.setToolTip(f"{T('右クリックで系統をタグ付け')}  [{_flbl}]")
         # モデル名クリック → model_search_requested シグナルを発火して model_cb に反映
         try: model_lbl.mousePressEvent = None
         except Exception: pass
@@ -10184,6 +10225,7 @@ class MainWindow(QMainWindow):
         self._meta_panel = MetaPanel(cfg=self._cfg)
         self._meta_panel.tag_search_requested.connect(self._set_tag_search)
         self._meta_panel.model_search_requested.connect(self._set_model_search)
+        self._meta_panel.lineage_set_requested.connect(self._set_model_lineage)   # [v2.36] 系統の手動タグ付け
         # ⚠ 削除禁止: MetaPanel のコピー操作後メッセージをステータスバーに表示する接続（v1.79実装）。
         # この connect を削除すると Positive/Negative/Seed のコピーボタン押下後に
         # ステータスバーへ何も表示されなくなる。
@@ -11076,6 +11118,37 @@ class MainWindow(QMainWindow):
         short = (message or "").splitlines()[0][:120] if message else T("不明なエラー")
         self._set_status(f"{Te('AI画像評価エラー: ')}{short}")
         QMessageBox.critical(self, T("AI画像評価"), message)
+
+    def _set_model_lineage(self, model, fam) -> None:
+        """モデル名に系統タグを手動設定/解除し model_lineage へ永続化、全経路へ反映。
+        fam=None は登録解除（自動判定に戻る）。"""
+        if not model:
+            return
+        table = self._cfg.get("model_lineage")
+        if not isinstance(table, dict):
+            table = {}
+        if fam is None:
+            if model not in table:
+                return
+            table.pop(model, None)
+        elif fam in _LINEAGE_KEYS:
+            table[model] = fam
+        else:
+            return
+        self._cfg["model_lineage"] = table
+        set_lineage_overrides(table)
+        try:
+            save_cfg(self._cfg)
+        except Exception:
+            pass
+        try:
+            self._grid._refresh_cell_badges()   # 可視セルのバッジを即時更新
+        except Exception:
+            pass
+        self._update_model_list()               # 系統/モデルのドロップダウンを再生成
+        self._filter_timer.start()              # 可視サムネイルの絞り込みを再評価
+        _flbl = (dict(BASE_MODEL_GROUPS).get(fam, fam) if fam else T("自動判定"))
+        self._set_status(f"{model} → {_flbl}")
 
     def _update_model_list(self):
         meta_snap = META.snapshot()
