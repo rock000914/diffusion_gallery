@@ -4,6 +4,28 @@ PNG/画像メタデータビューア (PySide6版) — 更新履歴
 
 ---
 
+## [v2.31] 2026-11-21
+
+### リファクタリング
+- **`AUDIO_EXTS` 二重定義をモジュールレベル定数に集約**。v2.29/v2.30 で `FullViewer._AUDIO_EXTS`（クラス属性）と `SettingsDialog._on_auto_detect_bpm` 内のハードコードタプルに分散していた音声拡張子リストを、`SUPPORTED_EXTS` の直下 [png_viewer.py:1017-1019](file:///N:/マイドライブ/png_viwer/png_viewer.py#L1017-L1019) に定義した単一の `AUDIO_EXTS = (".mp3", ".wav", ".flac", ".ogg", ".m4a", ".aac", ".opus")` に統一。
+  - `FullViewer._scan_audio_folder` の `self._AUDIO_EXTS` 参照 → `AUDIO_EXTS` [png_viewer.py:5352](file:///N:/マイドライブ/png_viwer/png_viewer.py#L5352)。
+  - `SettingsDialog._on_auto_detect_bpm` のハードコード → `AUDIO_EXTS` [png_viewer.py:6656](file:///N:/マイドライブ/png_viwer/png_viewer.py#L6656)。
+  - 副次的に `_scan_audio_folder` は `self._AUDIO_EXTS` を参照しなくなったので、クラス属性に依存しない純粋なスキャン関数になった。
+  - 将来 `.opus` や新形式を 1 箇所で追加でき、片方だけ追いつかないバグを防止。
+- `APP_VERSION` を `v2.30` → `v2.31` へバンプ。
+
+### 検証
+- `python -m py_compile` OK。`grep _AUDIO_EXTS` で残存参照 0 件。
+- `pv.AUDIO_EXTS` が 7 拡張子のタプルであること、`hasattr(FullViewer, '_AUDIO_EXTS')` が False であることを確認。
+- `_scan_audio_folder(r'E:\eof1.8RC12')` → 65 ファイル検出（.mp3/.ogg/.wav の混合）、`_scan_audio_folder(r'J:\motorvcdatafaile\Aizawatomo')` → 3 wav 検出。
+- 既存の v2.30 BPM 検出（中央値 123 BPM / 62曲）と整合（65 ファイル中 3 件は detect_bpm が None を返したため検出数 62）。
+
+### 補足: ボリューム調整
+- v2.29 で環境設定 > 🎵 音楽 タブに音量スライダーを実装済み（BGM 0-100 / 音声 0-100、`QAudioOutput.setVolume(0.0-1.0)` に変換して適用）。
+- スライドショー実行中にツールバーから素早く音量調整する機能は未実装（ご希望あれば次回）。
+
+---
+
 ## [v2.30] 2026-11-21
 
 ### 追加機能: BPM 自動検出（Phase 2）

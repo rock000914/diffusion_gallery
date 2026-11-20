@@ -209,7 +209,7 @@ except ImportError:
 # ══════════════════════════════════════════════════════════════════════════════
 #  定数・設定
 # ══════════════════════════════════════════════════════════════════════════════
-APP_VERSION  = "v2.30"
+APP_VERSION  = "v2.31"
 APP_NAME     = "PNG Metadata Viewer"
 APP_AUTHOR   = "nemot"
 _APP_ICON_B64 = (
@@ -1013,6 +1013,10 @@ RIGHT_PANEL_MIN_PREVIEW_HEIGHT = 180
 RIGHT_PANEL_MIN_META_HEIGHT = 220
 
 SUPPORTED_EXTS = [".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tiff", ".tif"]
+
+# スライドショー音楽で受け付ける拡張子 (v2.30 で AUDIO_EXTS に集約)。
+# FullViewer._scan_audio_folder と SettingsDialog._on_auto_detect_bpm の両方で参照する。
+AUDIO_EXTS = (".mp3", ".wav", ".flac", ".ogg", ".m4a", ".aac", ".opus")
 
 SORT_KEYS = [
     ("name",    T("名前")),
@@ -5313,8 +5317,6 @@ class FullViewer(QDialog):
         else: self._zoom_out()
 
     # ── スライドショー音楽 (v2.29) ────────────────────────────────────────
-    _AUDIO_EXTS = (".mp3", ".wav", ".flac", ".ogg", ".m4a", ".aac", ".opus")
-
     def _audio_cfg(self, key: str, default):
         """parent (MainWindow) の _cfg から ss_* を読む。親が壊れている場合の防御。"""
         mw = self.parent()
@@ -5347,7 +5349,7 @@ class FullViewer(QDialog):
         out = []
         for name in entries:
             ext = os.path.splitext(name)[1].lower()
-            if ext in self._AUDIO_EXTS:
+            if ext in AUDIO_EXTS:
                 full = os.path.join(folder, name)
                 if os.path.isfile(full):
                     out.append(full)
@@ -6651,7 +6653,7 @@ class SettingsDialog(QDialog):
         try:
             for name in os.listdir(folder):
                 ext = os.path.splitext(name)[1].lower()
-                if ext in (".mp3", ".wav", ".flac", ".ogg", ".m4a", ".aac", ".opus"):
+                if ext in AUDIO_EXTS:
                     full = os.path.join(folder, name)
                     if os.path.isfile(full):
                         paths.append(full)
