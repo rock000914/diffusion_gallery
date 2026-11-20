@@ -20,8 +20,13 @@ PNG/画像メタデータビューア (PySide6版) — 更新履歴
 - **判定の単入口 `resolve_lineage(name, raw)`**: 保存対応を最優先に引き、無ければ `classify_base_model()` にフォールバック。バッジ・系統フィルタ・モデルフィルタ・系統ドロップダウンの全経路を `classify_base_model` → `resolve_lineage` に統一し、1つのモデル名の系統がどの画面でも一致する（=「モデルで絞り込んでも反映される」）[png_viewer.py:3561](file:///N:/マイドライブ/png_viwer/png_viewer.py#L3561) / [png_viewer.py:3664](file:///N:/マイドライブ/png_viwer/png_viewer.py#L3664) / [png_viewer.py:4320](file:///N:/マイドライブ/png_viwer/png_viewer.py#L4320)。
 - **自動保存の方針**: `ModelListWorker` が モデル名→系統 の対応表も emit（`finished(list, list, dict)`）し、`_persist_lineage_overrides()` が settings へマージ。既存キー（手動編集の可能性）は上書きせず、`other`（未分類）は保存しない（将来の判定改善で再評価される余地を残す）。変更時だけ `save_cfg` + バッジ再描画 [png_viewer.py:11038-11066](file:///N:/マイドライブ/png_viwer/png_viewer.py#L11038-L11066)。起動時は MainWindow で `set_lineage_overrides(cfg["model_lineage"])` を復元 [png_viewer.py:8487](file:///N:/マイドライブ/png_viwer/png_viewer.py#L8487)。
 
+### 修正（判定順序バグ：Illustrious 等が SDXL に吸収される）
+- **`sdxl` を最優先にした不具合**: 初版の `_LINEAGE_NAME_RULES` で汎用 `sdxl` を先頭に置いたため、Illustrious/Pony/NoobAI（SDXL ベースで名前に "SDXL/XL" を併記することが多い）が `sdxl` に誤判定され系統が乱れた。順序を「**特定系統（anima/illustrious/pony/noobai/…）→ 汎用（sdxl複合 → sd → 単独 xl）は最後**」に再配置 [png_viewer.py:1097-1128](file:///N:/マイドライブ/png_viwer/png_viewer.py#L1097-L1128)。`AnimagineXL` 等は従来どおり `xl` 境界で `sdxl`、`illustriousSDXL` 系は `illustrious` に戻る。
+- **既存 `model_lineage` の修復**: バグ中に自動保存された誤エントリへ反映。`resolve_lineage` は保存値を優先するため、**汎用(sd/sdxl/other)→特定系統への昇格のみ**を名前再判定で検出し 4 件を修正（`waiIllustriousSDXL_v150/160/170`→illustrious、`autismmixSDXL_autismmixPony`→pony）。raw 指紋由来の anima 等は name 再判定で other に落ちるため非対象（保持）。作業前に `settings.json` を同フォルダへバックアップ済み。
+- **再判定の案内**: 判定を今後改良したら、`settings.json` の `model_lineage` 該当キー（または全体）を削除して再スキャンで付け直せる（スキャンは raw を持つので anima 指紋も復元）。手動確定の値は残す。
+
 ### 検証
-- `.tmp/smoke_v236.py`（45 check）: 17 系統それぞれの名称→系統、`sdxl` が `xl`/`sd` より優先、単語境界ガード（swan/rapid/animal/excellent/mossy 等で誤爆しない）、実画像相当 raw→anima・名称のみ→other、pony が指紋より優先、`GROUP` と `BADGE` のキー一致。レジストリは保存対応が自動を上書き／不正系統IDは除外／`other` 非保存／既存キー非上書き／新規のみ追加／変更時だけ再描画。実 PNG `00159-2971785256.png` の end-to-end 判別 = `anima`（手動 override で `other` に変更可）。既存 smoke（v2.33〜v2.35.2）も回帰 PASS。
+- `.tmp/smoke_v236.py`（54 check）: 17 系統それぞれの名称→系統、`sdxl` が `xl`/`sd` より優先、単語境界ガード（swan/rapid/animal/excellent/mossy 等で誤爆しない）、実画像相当 raw→anima・名称のみ→other、pony が指紋より優先、`GROUP` と `BADGE` のキー一致。**判定順序回帰（illust/pony + SDXL 併記で特定系統が勝つ／純正 sdxl・単独 xl は sdxl）**。レジストリは保存対応が自動を上書き／不正系統IDは除外／`other` 非保存／既存キー非上書き／新規のみ追加／変更時だけ再描画。実 PNG `00159-2971785256.png` の end-to-end 判別 = `anima`（手動 override で `other` に変更可）。既存 smoke（v2.33〜v2.35.2）も回帰 PASS。
 
 ---
 

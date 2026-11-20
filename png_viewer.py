@@ -1094,29 +1094,33 @@ BASE_MODEL_GROUPS = [
 # 既定は部分一致（sdxl は xl より先に評価して SD へ誤爆させない）。
 # 誤爆しやすい語のみ _LINEAGE_BOUND_TOKENS で単語境界照合に切り替える。
 # 新系統はここで1行追加するだけ（BASE_MODEL_GROUPS と LINEAGE_BADGES にも対応する ID を足す）。
+# ★判定順序が優先度。Illustrious/Pony/NoobAI は SDXL ベースで名前に "XL/SDXL" を
+#   併せ持つことが多いので、必ず汎用 sdxl/sd より「先」に置く（後だと sdxl に吸収される）。
 _LINEAGE_NAME_RULES = [
-    ("sdxl",        ("sdxl", "sd xl", "sd-xl", "sd_xl")),
+    # 特定アニメ系統（汎用 SDXL より優先）
+    ("anima",       ("anima",)),
     ("illustrious", ("illustrious", "ilustrious", "illust", "ilxl")),
     ("pony",        ("pony",)),
     ("noobai",      ("noobai", "noob")),
-    ("qwen",        ("qwen",)),
+    # その他のベース系統（複合名は単独語より先に / klein・krea は flux より先）
     ("lumina",      ("lumina",)),
     ("minimax",     ("minimax", "mini_max", "mini max")),
     ("krea",        ("krea",)),
     ("klein",       ("klein",)),
     ("flux",        ("flux",)),
-    ("anima",       ("anima",)),
-    ("zit",         ("z-image", "zimage", "z_image")),
+    ("qwen",        ("qwen",)),
+    ("zit",         ("z-image", "zimage", "z_image", "zit")),
     ("wan",         ("wan2", "wan 2", "wan2.1", "wan2.2", "wan_2")),
-    ("sd",          ("sd", "sd1", "sd2", "sd-1", "sd-2", "1.5", "14")),
-    ("sdxl",        ("xl",)),
     ("ernie",       ("ernie",)),
     ("pid",         ("pid",)),
     ("moss",        ("moss",)),
-    ("zit",         ("zit",)),
+    # 汎用（最後にして特定系統を優先。sdxl 複合 → sd → 単独 xl の順）
+    ("sdxl",        ("sdxl", "sd xl", "sd-xl", "sd_xl")),
+    ("sd",          ("sd", "sd1", "sd2", "sd-1", "sd-2", "1.5", "14")),
+    ("sdxl",        ("xl",)),
 ]
 # 英単語や無関係ファイル名へ部分一致で誤爆しやすい語だけ単語境界で照合する
-# （anima→animal, xl→pixel系, wan2→swan, pid→rapid, moss→mossy, sd/1.5/14→版数等）。
+# （anima→animal, xl→excellent, wan2→swan, pid→rapid, moss→mossy, sd/1.5/14→版数等）。
 _LINEAGE_BOUND_TOKENS = {"sd", "xl", "zit", "pid", "moss", "wan2", "anima", "1.5", "14"}
 # 各語を (文字列, 単語境界フラグ) に展開するキャッシュ。
 _LINEAGE_TOKENS = [(key, [(t, t in _LINEAGE_BOUND_TOKENS) for t in toks])
