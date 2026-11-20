@@ -138,7 +138,7 @@ Ctrl+ホイールでしか変えられなかった）。右カラム端にもフ
   3. _build_app_icon の一時ファイルを QPixmap 変換後に削除するよう修正
   4. save_cfg / save_ratings / load_quality_cache の裸 except を Exception に統一
   5. _cache_key / load_thumb_image / load_preview_image / clear_cache 等の裸 except を修正
-  6. ScanWorker の stat 取得 / FilterWorker / civitai_open_lora 等の裸 except を修正
+  6. ScanWorker の stat 取得 / FilterWorker 等の裸 except を修正
   7. MainWindow 内の裸 except を修正
   8. QAction as QAction2 の重複インポートを削除
 """
@@ -352,13 +352,11 @@ _I18N_TABLE = {
     'CFG scale の範囲。値が不明な画像は除外されます': {"en": 'CFG scale range. Images with unknown values are excluded.', "zh": 'CFG scale 范围。值未知的图片将被排除。', "ko": 'CFG scale 범위. 알 수 없는 값의 이미지는 제외됩니다'},
     'CSVを出力しました:\n': {"en": 'CSV exported:\n', "zh": '已导出 CSV：\n', "ko": 'CSV 출력 완료:\n'},
     'CSV出力': {"en": 'CSV export', "zh": 'CSV 导出', "ko": 'CSV 출력'},
-    'Civitaiで検索': {"en": 'Search on Civitai', "zh": '在 Civitai 上搜索', "ko": 'Civitai에서 검색'},
     '系統をタグ付け': {"en": 'Tag base model', "zh": '标记基础模型', "ko": '베이스 모델 태그'},
     '自動判定に戻す（登録解除）': {"en": 'Reset to auto (unregister)', "zh": '恢复自动判定（取消注册）', "ko": '자동 판정 복원(등록 해제)'},
     '右クリックで系統をタグ付け': {"en": 'Right-click to tag the base model', "zh": '右键点击以标记基础模型', "ko": '우클릭으로 베이스 모델을 태그합니다'},
     '自動判定': {"en": 'Auto', "zh": '自动判定', "ko": '자동'},
     '並び替え(&R)': {"en": 'Sort(&R)', "zh": '排序(&R)', "ko": '정렬(&R)'},
-    '逆順': {"en": 'Reverse order', "zh": '逆序', "ko": '역순'},
     'F': {"en": 'F', "zh": 'F', "ko": 'F'},
     'F1 キーボードショートカット': {"en": 'F1 Keyboard shortcuts', "zh": 'F1 键盘快捷键', "ko": 'F1 키보드 단축키'},
     'GB\n現行形式 .raw: ': {"en": 'GB\nCurrent .raw format: ', "zh": 'GB\n当前格式 .raw：', "ko": 'GB\n현재 형식 .raw: '},
@@ -400,7 +398,6 @@ _I18N_TABLE = {
     'thumb_mem=メモリヒット / thumb_disk=ディスクサムネ読込 / thumb_decode=デコード+縮小\n': {"en": 'thumb_mem=memory hit / thumb_disk=disk thumbnail read / thumb_decode=decode+resize\n', "zh": 'thumb_mem=内存命中 / thumb_disk=磁盘缩略图读取 / thumb_decode=解码+缩小\n', "ko": 'thumb_mem=메모리 히트 / thumb_disk=디스크 썸네일 읽기 / thumb_decode=디코드+리사이즈\n'},
     'thumb_mem=メモリヒット / thumb_disk=ディスクサムネ読込 / thumb_decode=デコード+縮小\npreview_mem/preview_load=右パネル等のプレビュー / fullview=全画面デコード': {"en": 'thumb_mem=memory hit / thumb_disk=disk thumbnail read / thumb_decode=decode+resize\npreview_mem/preview_load=right panel previews etc. / fullview=fullscreen decode', "zh": 'thumb_mem=内存命中 / thumb_disk=磁盘缩略图读取 / thumb_decode=解码+缩小\npreview_mem/preview_load=右侧面板等预览 / fullview=全屏解码', "ko": 'thumb_mem=메모리 히트 / thumb_disk=디스크 썸네일 읽기 / thumb_decode=디코드+리사이즈\npreview_mem/preview_load=오른쪽 패널 미리보기 등 / fullview=전체화면 디코드'},
     'transformers が見つかりません。\n\npython -m pip install transformers': {"en": 'transformers not found.\n\npython -m pip install transformers', "zh": '未找到 transformers。\n\npython -m pip install transformers', "ko": 'transformers 를 찾을 수 없습니다.\n\npython -m pip install transformers'},
-    '※ LoRA名クリック時のCivitai検索と連携します': {"en": '※ Linked with Civitai search when clicking a LoRA name', "zh": '※ 点击 LoRA 名称时联动 Civitai 搜索', "ko": '※ LoRA 이름 클릭 시 Civitai 검색과 연동됩니다'},
     '※ フォルダ内の .mp3/.wav/.flac/.ogg/.m4a をランダム順でループ再生。拍同期は BGM の BPM のみ基準。': {"en": "※ Loops .mp3/.wav/.flac/.ogg/.m4a files in the folder in random order. Beat sync uses BGM BPM only.", "zh": "※ 文件夹内的 .mp3/.wav/.flac/.ogg/.m4a 文件以随机顺序循环播放。节拍同步仅以 BGM 的 BPM 为基准。", "ko": "※ 폴더 내 .mp3/.wav/.flac/.ogg/.m4a 파일을 랜덤 순서로 반복 재생합니다. 박자 동기화는 BGM 의 BPM 만 기준입니다."},
     '※ ホットキー: [ ] = BGM ±5%, { } = 音声 ±5%': {"en": '※ Hotkeys: [ ] = BGM ±5%, { } = voice ±5%', "zh": '※ 快捷键：[ ] = BGM ±5%，{ } = 语音 ±5%', "ko": '※ 단축키: [ ] = BGM ±5%, { } = 음성 ±5%'},
     '※ ロゴを登録したときはここに保存されます。\n': {"en": '※ Registered logo images are saved here.\n', "zh": '※ 注册的 Logo 图片将保存在这里。\n', "ko": '※ 등록한 로고는 여기에 저장됩니다.\n'},
@@ -861,7 +858,6 @@ _I18N_TABLE = {
     '（現行コードは読まない残骸）': {"en": ' (remnants not read by current code)', "zh": '（当前代码不读取的残留）', "ko": '(현재 코드가 읽지 않는 잔여물)'},
     '（通常の部分一致で検索します）': {"en": '(searching with normal partial match)', "zh": '（使用普通部分匹配搜索）', "ko": '(일반 부분 일치로 검색합니다)'},
     '）\n\n計 ': {"en": ')\n\nTotal ', "zh": '）\n\n合计 ', "ko": ')\n\n합계 '},
-    '🌐 Civitai で開く': {"en": '🌐 Open on Civitai', "zh": '🌐 在 Civitai 上打开', "ko": '🌐 Civitai 에서 열기'},
     '🎨 ロゴ/タグ連動設定': {"en": '🎨 Logo/tag linkage settings', "zh": '🎨 Logo/标签联动设置', "ko": '🎨 로고/태그 연동 설정'},
     '🎨 ロゴオーバーレイ': {"en": '🎨 Logo overlay', "zh": '🎨 Logo 叠加', "ko": '🎨 로고 오버레이'},
     '🎵 自動検出': {"en": "🎵 Auto-detect", "zh": "🎵 自动检测", "ko": "🎵 자동 감지"},
@@ -1047,7 +1043,6 @@ except Exception:
     pass
 
 DEFAULT_IMAGE_ROOT_ENV = "PNG_VIEWER_DEFAULT_FOLDER"
-CIVITAI_API_KEY_ENV = "CIVITAI_API_KEY"
 RIGHT_PANEL_MIN_PREVIEW_HEIGHT = 180
 RIGHT_PANEL_MIN_META_HEIGHT = 220
 
@@ -1286,11 +1281,6 @@ def get_default_image_folder() -> str:
         if candidate.is_dir():
             return str(candidate)
     return str(Path.home())
-
-
-def get_civitai_api_key() -> str:
-    """Load the optional API key from the environment for public-safe distribution."""
-    return os.environ.get(CIVITAI_API_KEY_ENV, "").strip()
 
 
 def normalize_right_vsplit_sizes(saved_sizes) -> list[int]:
@@ -3303,54 +3293,6 @@ def delete_file(path: str, permanent: bool = False) -> tuple[bool, str]:
         return True, ""
     except Exception as e:
         return False, str(e)
-
-# ── Civitai ─────────────────────────────────────────────────────────────
-def civitai_open_lora(lora_name: str, lora_folder: str = ""):
-    def _worker():
-        import urllib.request, urllib.parse
-        api_key = get_civitai_api_key()
-        if lora_folder and os.path.isdir(lora_folder):
-            ln = lora_name.lower().replace(" ","").replace("_","").replace("-","")
-            for root_d, _, fns in os.walk(lora_folder):
-                for fn in fns:
-                    if not fn.endswith(".cm-info.json"): continue
-                    stem = fn[:-len(".cm-info.json")].lower().replace(" ","").replace("_","").replace("-","")
-                    if ln in stem or stem in ln:
-                        try:
-                            data = json.loads(Path(os.path.join(root_d, fn)).read_text("utf-8"))
-                            mid = data.get("modelId") or data.get("model_id")
-                            vid = data.get("id") or data.get("versionId")
-                            if mid:
-                                url = f"https://civitai.com/models/{mid}"
-                                if vid: url += f"?modelVersionId={vid}"
-                                webbrowser.open(url); return
-                        except Exception: pass
-        clean = re.sub(r"[\s_]+", " ", lora_name.split("(")[0]).strip()
-        q = urllib.parse.quote(clean)
-        url = f"https://civitai.com/api/v1/models?limit=10&query={q}&types=LORA&sort=Highest+Rated"
-        try:
-            headers = {
-                "Content-Type": "application/json",
-                "User-Agent": f"{APP_NAME}/{APP_VERSION}"
-            }
-            if api_key:
-                headers["Authorization"] = f"Bearer {api_key}"
-            req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                data = json.loads(resp.read())
-            items = data.get("items", [])
-            if items:
-                best = items[0]; cl = clean.lower().replace(" ","")
-                for item in items:
-                    if item.get("name","").lower().replace(" ","").replace("_","") == cl:
-                        best = item; break
-                slug = best.get("slug", "")
-                webbrowser.open(f"https://civitai.com/models/{best['id']}/{slug}")
-            else:
-                webbrowser.open(f"https://civitai.com/search/models?query={q}")
-        except Exception:
-            webbrowser.open(f"https://civitai.com/search/models?query={urllib.parse.quote(clean)}")
-    threading.Thread(target=_worker, daemon=True).start()
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  Worker スレッド (QThread ベース)
@@ -6833,13 +6775,10 @@ class LoraStatsWindow(QDialog):
         self._copy_btn = QPushButton(T("📋 コピー"))
         self._copy_btn.setToolTip(T("LoRA名をクリップボードにコピー"))
         self._copy_btn.clicked.connect(self._copy_selected_name)
-        self._civitai_btn = QPushButton("🌐 Civitai")
-        self._civitai_btn.clicked.connect(self._civitai_selected)
         self._filter_btn = QPushButton(T("🔍 この画像で絞り込み"))
         self._filter_btn.clicked.connect(self._filter_by_selected)
         dl.addWidget(self._detail_lbl, 1)
         dl.addWidget(self._copy_btn)
-        dl.addWidget(self._civitai_btn)
         dl.addWidget(self._filter_btn)
         root.addWidget(dbar)
 
@@ -7064,7 +7003,7 @@ class LoraStatsWindow(QDialog):
                 Qt.Orientation.Horizontal, 0, self._model.columnCount() - 1)
 
     def _on_context_menu(self, pos):
-        """右クリックメニュー: コピー / 削除 / Civitai / 絞り込み"""
+        """右クリックメニュー: コピー / 削除 / 絞り込み"""
         row = self._selected_row()
         if not row: return
         menu = QMenu(self)
@@ -7073,15 +7012,12 @@ class LoraStatsWindow(QDialog):
         del_act  = menu.addAction(f"{Te('🗑 削除  —  ')}{row[0]}")
         del_act.setToolTip(T("LoRAファイルと関連ファイル(.cm-info.json / .preview.jpeg)を削除します"))
         menu.addSeparator()
-        civ_act  = menu.addAction(T("🌐 Civitai で開く"))
         filt_act = menu.addAction(T("🔍 この画像で絞り込み"))
         act = menu.exec(self._table.viewport().mapToGlobal(pos))
         if act == copy_act:
             self._copy_selected_name()
         elif act == del_act:
             self._delete_rows([row])
-        elif act == civ_act:
-            self._civitai_selected()
         elif act == filt_act:
             self._filter_by_selected()
 
@@ -7170,10 +7106,6 @@ class LoraStatsWindow(QDialog):
     # ────────────────────────────────────────────────────────────────────
     #  その他アクション
     # ────────────────────────────────────────────────────────────────────
-    def _civitai_selected(self):
-        row = self._selected_row()
-        if row: civitai_open_lora(row[0], self._lora_folder)
-
     def _filter_by_selected(self):
         row = self._selected_row()
         if not row: return
@@ -7562,7 +7494,6 @@ class SettingsDialog(QDialog):
         browse_btn.clicked.connect(self._browse_lora)
         lora_row = QHBoxLayout(); lora_row.addWidget(self._lora_edit,1); lora_row.addWidget(browse_btn)
         l3.addRow(T("LoRAフォルダ:"), lora_row)
-        l3.addRow(QLabel(T("※ LoRA名クリック時のCivitai検索と連携します")))
         tabs.addTab(t3, "LoRA")
 
         # ── タブ4: ロゴ
@@ -7838,7 +7769,6 @@ class MetaPanel(QWidget):
     """
     tag_search_requested   = Signal(str)
     model_search_requested = Signal(str)   # モデル名クリック → model_cb に反映
-    civitai_requested      = Signal(str, str)
     # ⚠ 削除禁止: コピー操作後にステータスバーへメッセージを通知するシグナル（v1.79実装）。
     # _copy_pos / _copy_neg / _copy_seed / seed_lbl.mousePressEvent から emit される。
     # MainWindow._build_right_panel で self._set_status に接続される。
@@ -8260,10 +8190,9 @@ class MetaPanel(QWidget):
     def _init_meta_rows(self):
         """初回だけ固定行ウィジェットを生成してキャッシュする。"""
         self._meta_val_labels: dict = {}   # key -> QLabel (値)
-        self._meta_civ_btns:  dict = {}    # key -> QPushButton (🌐)
         self._meta_row_widgets: dict = {}  # key -> QWidget (行全体)
 
-        def _make_row(key, clickable=False, with_civ=False):
+        def _make_row(key, clickable=False):
             row_w = QWidget()
             row_w.setStyleSheet("background:transparent;")
             rl = QHBoxLayout(row_w)
@@ -8282,24 +8211,13 @@ class MetaPanel(QWidget):
                 val_lbl.setStyleSheet(f"color:{PAL['fg1']};")
             rl.addWidget(key_lbl)
             rl.addWidget(val_lbl, 1)
-            if with_civ:
-                ci_btn = QPushButton("🌐")
-                ci_btn.setFixedSize(22, 22)
-                ci_btn.setStyleSheet(
-                    f"background:transparent;color:{PAL['fg3']};border:none;padding:0;")
-                ci_btn.setToolTip(T("Civitaiで検索"))
-                ci_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-                rl.addWidget(ci_btn)
-                self._meta_civ_btns[key] = ci_btn
             self._meta_val_labels[key] = val_lbl
             self._meta_row_widgets[key] = row_w
             return row_w
 
         for key in [T("ファイルサイズ"), T("解像度"), T("日時")]:
             self._meta_layout.addWidget(_make_row(key))
-        self._meta_layout.addWidget(_make_row(T("モデル"), clickable=True, with_civ=True))
-        self._meta_civ_btns[T("モデル")].clicked.connect(
-            lambda checked=False: civitai_open_lora(self._meta_val_labels[T("モデル")].text(), ""))
+        self._meta_layout.addWidget(_make_row(T("モデル"), clickable=True))
         _mdl_lbl = self._meta_val_labels[T("モデル")]
         _mdl_lbl.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         _mdl_lbl.customContextMenuRequested.connect(self._show_lineage_menu)
@@ -8372,7 +8290,6 @@ class MetaPanel(QWidget):
         except Exception: pass
         if model:
             model_lbl.mousePressEvent = lambda e, m=model: self.model_search_requested.emit(m)
-        self._meta_civ_btns[T("モデル")].setVisible(bool(model))
 
         lbl["Steps"].setText(meta.get("steps","") or "—")
         lbl["CFG"].setText(meta.get("cfg","") or "—")
@@ -8412,13 +8329,7 @@ class MetaPanel(QWidget):
             val_lbl.setCursor(Qt.CursorShape.PointingHandCursor)
             val_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             val_lbl.mousePressEvent = lambda e, n=lo: self.tag_search_requested.emit(n)
-            ci_btn = QPushButton("🌐"); ci_btn.setFixedSize(22, 22)
-            ci_btn.setStyleSheet(
-                f"background:transparent;color:{PAL['fg3']};border:none;padding:0;")
-            ci_btn.setToolTip(T("Civitaiで検索"))
-            ci_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-            ci_btn.clicked.connect(lambda checked=False, n=lo: civitai_open_lora(n, ""))
-            rl.addWidget(key_lbl); rl.addWidget(val_lbl, 1); rl.addWidget(ci_btn)
+            rl.addWidget(key_lbl); rl.addWidget(val_lbl, 1)
             self._meta_layout.insertWidget(insert_pos, row_w)
             self._meta_lora_rows.append(row_w)
             insert_pos += 1
@@ -8940,9 +8851,14 @@ class MainWindow(QMainWindow):
             _a.triggered.connect(lambda _c=False, key=_k: self._select_sort_key(key))
             self._sort_acts[_k] = _a
         sortm.addSeparator()
-        self._sort_rev_act = sortm.addAction(T("逆順"))
-        self._sort_rev_act.setCheckable(True)
-        self._sort_rev_act.toggled.connect(self._on_sort_rev_menu)
+        self._dir_acts = {}
+        _dg = QActionGroup(self)
+        _dg.setExclusive(True)
+        for _rev, _dlbl in ((False, T("↑昇順")), (True, T("↓降順"))):
+            _a = _dg.addAction(sortm.addAction(_dlbl))
+            _a.setCheckable(True)
+            _a.triggered.connect(lambda _c=False, rev=_rev: self._select_sort_dir(rev))
+            self._dir_acts[_rev] = _a
 
         # ツール
         tm = mb.addMenu(T("ツール(&T)"))
@@ -11263,12 +11179,13 @@ class MainWindow(QMainWindow):
         if idx >= 0 and self._sort_cb.currentIndex() != idx:
             self._sort_cb.setCurrentIndex(idx)
 
-    def _on_sort_rev_menu(self, on: bool):
-        # メニューバーの「逆順」→ 状態保持の _sort_dir_btn へ反映（clicked を発火させず直接更新）
-        if self._sort_dir_btn.isChecked() != on:
-            self._sort_dir_btn.setChecked(on)
+    def _select_sort_dir(self, rev: bool):
+        # メニューバーの「昇順/降順」→ 状態保持の _sort_dir_btn へ反映（clicked を発火させず直接更新）
+        if self._sort_dir_btn.isChecked() != rev:
+            self._sort_dir_btn.setChecked(rev)
             self._update_sort_dir_btn()
             self._apply_filter()
+        self._sync_sort_menu()
 
     def _sync_sort_menu(self):
         # _sort_cb / _sort_dir_btn の現在値をメニューバーのチェック状態へ写す（双方向同期）
@@ -11279,13 +11196,13 @@ class MainWindow(QMainWindow):
         for k, a in acts.items():
             if a.isChecked() != (k == cur):
                 a.setChecked(k == cur)
-        rev_act = getattr(self, "_sort_rev_act", None)
-        if rev_act is not None:
-            want = self._sort_dir_btn.isChecked()
-            if rev_act.isChecked() != want:
-                rev_act.blockSignals(True)
-                rev_act.setChecked(want)
-                rev_act.blockSignals(False)
+        rev = self._sort_dir_btn.isChecked()
+        for on, a in getattr(self, "_dir_acts", {}).items():
+            want = (on == rev)
+            if a.isChecked() != want:
+                a.blockSignals(True)
+                a.setChecked(want)
+                a.blockSignals(False)
 
     def _update_sort_dir_btn(self):
         rev = self._sort_dir_btn.isChecked()

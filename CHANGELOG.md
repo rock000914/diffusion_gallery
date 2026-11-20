@@ -12,13 +12,21 @@ PNG/画像メタデータビューア (PySide6版) — 更新履歴
 - **アドレス欄を短縮**: アドレスグループの `stretch` を 3→**1** に下げ、モデル欄ぶん余白を確保 [png_viewer.py:9302](file:///N:/マイドライブ/png_viwer/png_viewer.py#L9302)。
 
 ### 追加（メニューバーに「並び替え」）
-- **`並び替え(&R)` メニュー**: メニューバーの表示とツールの間に新設。`SORT_KEYS`（名前/更新日時/作成日時/サイズ/画像サイズ/フォルダー/ランダム）を排他チェック式アクションで、その下に「逆順」トグルを追加 [png_viewer.py:8932-8948](file:///N:/マイドライブ/png_viwer/png_viewer.py#L8932-L8948)。
+- **`並び替え(&R)` メニュー**: メニューバーの表示とツールの間に新設。`SORT_KEYS`（名前/更新日時/作成日時/サイズ/画像サイズ/フォルダー/ランダム）を排他チェック式アクションにし、その下に区切り線と**「↑昇順 / ↓降順」の排他トグル**を追加 [png_viewer.py:8932-8950](file:///N:/マイドライブ/png_viwer/png_viewer.py#L8932-L8950)。単一の「逆順」だと何の逆か分かりにくいとの指摘から、昇順/降順を明示した 2 択にした。
 - **ツールバーの並び替え控件は廃止（状態は維持）**: `_sort_cb`/`_sort_dir_btn` はツールバーへ `add_w` せず生成のみ（非表示）にし、メニューから操作。既存の `_apply_filter` は同じ widget を読むためロジック不変 [png_viewer.py:9184-9199](file:///N:/マイドライブ/png_viwer/png_viewer.py#L9184-L9199)。
-- **双方向同期**: `_select_sort_key`（メニュー→combo）、`_on_sort_rev_menu`（メニュー→ボタン）、`_sync_sort_menu`（combo/ボタン→メニュー）を追加。combo の `currentIndexChanged` と `_toggle_sort_dir` から同期を発火させ、どの経路で変えてもメニューのチェックが追従する [png_viewer.py:11260-11280](file:///N:/マイドライブ/png_viwer/png_viewer.py#L11260-L11280)。`QActionGroup`（QtGui）を import に追加。
-- **I18N**: `並び替え(&R)` / `逆順` に en/zh/ko を登録。
+- **双方向同期**: `_select_sort_key`（メニュー→combo）、`_select_sort_dir`（メニューの昇順/降順→ボタン）、`_sync_sort_menu`（combo/ボタン→メニュー）を追加。combo の `currentIndexChanged` と `_toggle_sort_dir` から同期を発火させ、どの経路で変えてもメニューのチェックが追従する [png_viewer.py:11265-11295](file:///N:/マイドライブ/png_viwer/png_viewer.py#L11265-L11295)。`QActionGroup`（QtGui）を import に追加。
+- **I18N**: `並び替え(&R)` を en/zh/ko 登録。昇順/降順は既存の `↑昇順`/`↓降順` キーを流用。
+
+### 削除（Civitai 検索機能）
+- **使えない検索を撤去**: 「civitai の検索機能がほとんど機能していない」とのことで、関連 UI とロジックを全削除。
+  - 中核 `civitai_open_lora()` / `get_civitai_api_key()` / 定数 `CIVITAI_API_KEY_ENV` を削除 [png_viewer.py:1048](file:///N:/マイドライブ/png_viwer/png_viewer.py#L1048)。
+  - MetaPanel のモデル欄🌐ボタン・LoRA 行の🌐ボタン、`with_civ`/`_meta_civ_btns`、未使用シグナル `civitai_requested` を削除。
+  - LoRA 使用率分析ダイアログの「🌐 Civitai」ボタン・右クリック「🌐 Civitai で開く」・`_civitai_selected()` を削除。
+  - 環境設定の「※ LoRA名クリック時のCivitai検索と連携します」注記と、上記で失われた I18N キー（`Civitaiで検索`/`🌐 Civitai で開く`/`※ LoRA…`）を削除。LoRA 名クリック→タグ絞り込み自体（`tag_search_requested`）は維持。
+- 源码中の "Civitai/civitai" 語はヘッダの歴史コメント 1 箇所のみ（実装からは消滅）。
 
 ### 検証
-- `.tmp/smoke_v237.py`（**15 check**）: メニューに「並び替え」が生成され `SORT_KEYS` 分のアクション＋「逆順」が存在／`_sort_cb`・`_sort_dir_btn` はツールバー非表示／`_model_cb` 幅 220px 以上／メニュー→combo（size/date）・combo→メニュー・メニュー→ボタン（逆順）→ボタン→メニュー（click）の双方向同期／未知キーで例外なし。既存 `smoke_v236`（79 check）と v2.33〜v2.35 系も回帰 PASS。`py_compile` OK。
+- `.tmp/smoke_v237.py`（**25 check**）: メニューに「並び替え」が生成され `SORT_KEYS` 分＋昇順/降順 2 択が存在／`_sort_rev_act` 廃止／`_sort_cb`・`_sort_dir_btn` はツールバー非表示／`_model_cb` 幅 220px 以上／メニュー→combo・combo→メニュー・メニュー→ボタン（昇順/降順）→ボタン→メニュー（click）の双方向同期／未知キーで例外なし。**Civitai 撤去 5 項目**（`civitai_open_lora` 無し／`civitai_requested` 無し／`_meta_civ_btns` 無し／源码に `_civitai_selected`・`_civitai_btn` 無し／"Civitai" 語が歴史コメント 1 のみ）。既存 `smoke_v236`（79 check）と v2.33〜v2.35 系も回帰 PASS。`py_compile` OK。
 
 ---
 
