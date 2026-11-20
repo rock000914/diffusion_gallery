@@ -4,6 +4,20 @@ PNG/画像メタデータビューア (PySide6版) — 更新履歴
 
 ---
 
+## [v2.32.2] 2026-11-21
+
+### バグ修正
+- **最大化ウィンドウをタイトルバードラッグで解除すると縦幅が最小サイズに潰れる**問題を修正（Windows 実機で再現確認: 1600x900 画像で復元後 `936×124`、修正後 `1340×864`）。
+  - **FullViewer**: `_start_maximized=True` 起動時に `showMaximized()` を呼ぶ前に、画像アスペクトと画面利用率 75% から妥当な「復元サイズ」を計算して `resize()` + `move()` + `_normal_size` 登録を追加 [png_viewer.py:4911-4935](file:///N:/マイドライブ/png_viwer/png_viewer.py#L4911-L4935)。Qt はこの事前ジオメトリを「normal geometry」として保持し、OS のドラッグ解除時にそこへ戻る。
+  - **MainWindow**: `_restore_geometry()` で `restoreGeometry()` が失敗した場合（`geometry` が未保存 or 壊れている）に、`showMaximized()` 前に画面比 60%（最低 900×600）の復元サイズを登録するガードを追加 [png_viewer.py:9456-9476](file:///N:/マイドライブ/png_viwer/png_viewer.py#L9456-L9476)。
+  - 両箇所とも、事前にウィンドウが表示済みで normal geometry が確立されている経路（`_toggle_fullscreen` など）は影響なし。
+
+### 検証
+- `.tmp/smoke_v232_2.py`: `windows` プラットフォームで実ウィンドウを作り、`showMaximized()` → `showNormal()` 後の geometry が width>=640 かつ height>=480 を確認。修正前: `h=124` で FAIL、修正後: `h=864` で PASS。
+- 既存 `.tmp/smoke_v232.py` (音量 OSD) も引き続き `SMOKE_OK`。
+
+---
+
 ## [v2.32.1] 2026-11-21
 
 ### バグ修正

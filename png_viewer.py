@@ -209,7 +209,7 @@ except ImportError:
 # ══════════════════════════════════════════════════════════════════════════════
 #  定数・設定
 # ══════════════════════════════════════════════════════════════════════════════
-APP_VERSION  = "v2.32.1"
+APP_VERSION  = "v2.32.2"
 APP_NAME     = "PNG Metadata Viewer"
 APP_AUTHOR   = "nemot"
 _APP_ICON_B64 = (
@@ -4912,6 +4912,25 @@ class FullViewer(QDialog):
         if self._start_maximized:
             self._fit_mode = "fit"
             self._fit_btn.setText("⊞ fit")
+            # [v2.32.2] タイトルバーのドラッグで最大化を解除すると、
+            # 事前の正常ジオメトリが未登録だと最小高さまで潰れる。
+            # showMaximized() 前に画像アスペクト+画面比で妥当な復元サイズを
+            # resize() しておくと、OS がそこへ戻してくれる。
+            screen0 = self.screen() or QApplication.primaryScreen()
+            sg0 = screen0.availableGeometry()
+            chrome_h0 = 38 + 32 + 40
+            max_w0 = int(sg0.width() * 0.75)
+            max_h0 = int(sg0.height() * 0.75) - chrome_h0
+            if iw > 0 and ih > 0:
+                scale0 = min(max_w0 / iw, max_h0 / ih, 1.0)
+                rw = max(640, int(iw * scale0))
+                rh = max(480, int(ih * scale0) + chrome_h0)
+            else:
+                rw, rh = max(640, int(sg0.width() * 0.6)), max(480, int(sg0.height() * 0.6))
+            self.resize(rw, rh)
+            self.move(sg0.x() + (sg0.width() - rw) // 2,
+                      sg0.y() + (sg0.height() - rh) // 2)
+            self._normal_size = (self.x(), self.y(), rw, rh)
             self.showMaximized()
             self.setFocus()
             QTimer.singleShot(30, self._show_image)
@@ -9436,10 +9455,24 @@ class MainWindow(QMainWindow):
     # ══ ジオメトリ ════════════════════════════════════════════════════════
     def _restore_geometry(self):
         geo = self._cfg.get("geometry","")
+        restored = False
         if geo:
-            try: self.restoreGeometry(bytes.fromhex(geo))
-            except Exception: pass
+            try:
+                restored = bool(self.restoreGeometry(bytes.fromhex(geo)))
+            except Exception:
+                restored = False
+        # [v2.32.2] 保存 geometry が無い/壊れている & 最大化起動、だと
+        # タイトルバーのドラッグ解除時に最小サイズまで潰れるため
+        # showMaximized() 前に画面比 60% の復元サイズを登録する。
         if self._cfg.get("maximized", False):
+            if not restored:
+                scr = self.screen() or QApplication.primaryScreen()
+                sg = scr.availableGeometry()
+                w = max(900, int(sg.width() * 0.6))
+                h = max(600, int(sg.height() * 0.6))
+                self.resize(w, h)
+                self.move(sg.x() + (sg.width() - w) // 2,
+                          sg.y() + (sg.height() - h) // 2)
             self.showMaximized()
 
     def _set_main_splitter_sizes(self, sizes: list[int], minimums: list[int] | None = None):
