@@ -224,7 +224,7 @@ except Exception:
 # ══════════════════════════════════════════════════════════════════════════════
 #  定数・設定
 # ══════════════════════════════════════════════════════════════════════════════
-APP_VERSION  = "v2.38.3"
+APP_VERSION  = "v2.38.4"
 APP_NAME     = "Diffusion Gallery"
 VOLUME_MAX   = 400   # voice 音量スライダー上限(%)。100超は再生前 PCM 増幅(temp)で実現
 APP_AUTHOR   = "nemot"
@@ -421,6 +421,7 @@ _I18N_TABLE = {
     '※ ロゴを登録したときはここに保存されます。\n※ 既定の保存先: ': {"en": '※ Registered logo images are saved here.\n※ Default location: ', "zh": '※ 注册的 Logo 图片将保存在这里。\n※ 默认保存位置：', "ko": '※ 등록한 로고는 여기에 저장됩니다.\n※ 기본 저장 위치: '},
     '※ 保存先を変更しても、ここに表示されている場所が現在の保存先です。': {"en": '※ Even if the location is changed, the path shown here is the current save location.', "zh": '※ 即使更改了保存位置，这里显示的仍然是当前保存位置。', "ko": '※ 저장 위치를 변경해도 여기에 표시된 경로가 현재 저장 위치입니다.'},
     '※ 既定の保存先: ': {"en": '※ Default location: ', "zh": '※ 默认保存位置：', "ko": '※ 기본 저장 위치: '},
+    '※ 音量はスライドショー中の 🔊 ボタン（ポップアップ）で調整します。': {"en": "※ Volume is adjusted with the 🔊 button (popup) during the slideshow.", "zh": "※ 音量请在幻灯片播放时通过 🔊 按钮（弹出框）调节。", "ko": "※ 볼륨은 슬라이드쇼 중에 🔊 버튼(팝업)으로 조절합니다."},
     '※列ヘッダーをクリックでソート': {"en": '※ Click column headers to sort', "zh": '※ 点击列标题可排序', "ko": '※ 열 헤더를 클릭하면 정렬합니다'},
     '※数万枚ある場合はディスクI/Oにより一時的に動作が重くなる場合があります。': {"en": '※ With tens of thousands of images, disk I/O may temporarily make the app sluggish.', "zh": '※ 如果有几万张图片，磁盘 I/O 可能会暂时使应用变慢。', "ko": '※ 수만 장인 경우 디스크 I/O 때문에 일시적으로 동작이 느려질 수 있습니다.'},
     'ℹ バージョン情報 ': {"en": 'ℹ Version info ', "zh": 'ℹ 版本信息 ', "ko": 'ℹ 버전 정보 '},
@@ -7677,11 +7678,6 @@ class SettingsDialog(QDialog):
             self._ss_bgm_enabled = QCheckBox(T("スライドショー時に再生"))
             self._ss_bgm_enabled.setChecked(bool(self._cfg.get("ss_bgm_enabled", False)))
             bgm_form.addRow(self._ss_bgm_enabled)
-            self._ss_bgm_volume = QSlider(Qt.Orientation.Horizontal)
-            self._ss_bgm_volume.setRange(0, 100)
-            self._ss_bgm_volume.setValue(int(self._cfg.get("ss_bgm_volume", 80)))
-            self._ss_bgm_volume.setTickPosition(QSlider.TickPosition.NoTicks)
-            bgm_form.addRow(T("音量:"), self._ss_bgm_volume)
             self._ss_bgm_speed = QDoubleSpinBox()
             self._ss_bgm_speed.setRange(0.5, 2.0); self._ss_bgm_speed.setSingleStep(0.05)
             self._ss_bgm_speed.setDecimals(2)
@@ -7736,10 +7732,6 @@ class SettingsDialog(QDialog):
             self._ss_voice_enabled = QCheckBox(T("スライドショー時に再生"))
             self._ss_voice_enabled.setChecked(bool(self._cfg.get("ss_voice_enabled", False)))
             voice_form.addRow(self._ss_voice_enabled)
-            self._ss_voice_volume = QSlider(Qt.Orientation.Horizontal)
-            self._ss_voice_volume.setRange(0, VOLUME_MAX)
-            self._ss_voice_volume.setValue(int(self._cfg.get("ss_voice_volume", 100)))
-            voice_form.addRow(T("音量:"), self._ss_voice_volume)
             self._ss_voice_speed = QDoubleSpinBox()
             self._ss_voice_speed.setRange(0.5, 2.0); self._ss_voice_speed.setSingleStep(0.05)
             self._ss_voice_speed.setDecimals(2)
@@ -7751,6 +7743,10 @@ class SettingsDialog(QDialog):
             note.setWordWrap(True)
             note.setStyleSheet(f"color:{PAL['fg3']};")
             l6.addWidget(note)
+            vol_note = QLabel(T("※ 音量はスライドショー中の 🔊 ボタン（ポップアップ）で調整します。"))
+            vol_note.setWordWrap(True)
+            vol_note.setStyleSheet(f"color:{PAL['fg3']};")
+            l6.addWidget(vol_note)
             l6.addStretch()
             tabs.addTab(t6, T("🎵 音楽"))
 
@@ -7862,7 +7858,6 @@ class SettingsDialog(QDialog):
         if HAS_MULTIMEDIA and hasattr(self, "_ss_bgm_edit"):
             self._cfg["ss_bgm_folder"]   = self._ss_bgm_edit.text().strip()
             self._cfg["ss_bgm_enabled"]  = bool(self._ss_bgm_enabled.isChecked())
-            self._cfg["ss_bgm_volume"]   = int(self._ss_bgm_volume.value())
             self._cfg["ss_bgm_speed"]    = float(self._ss_bgm_speed.value())
             self._cfg["ss_bgm_bpm"]      = int(self._ss_bgm_bpm.value())
             self._cfg["ss_bgm_beat"]     = int(self._ss_bgm_beat.currentData())
@@ -7870,7 +7865,6 @@ class SettingsDialog(QDialog):
                 self._cfg["ss_bgm_wavesync"] = bool(self._ss_bgm_wavesync.isChecked())
             self._cfg["ss_voice_folder"] = self._ss_voice_edit.text().strip()
             self._cfg["ss_voice_enabled"]  = bool(self._ss_voice_enabled.isChecked())
-            self._cfg["ss_voice_volume"]   = int(self._ss_voice_volume.value())
             self._cfg["ss_voice_speed"]    = float(self._ss_voice_speed.value())
         if hasattr(self, "_ss_anim_enabled"):
             self._cfg["ss_anim_enabled"] = bool(self._ss_anim_enabled.isChecked())
