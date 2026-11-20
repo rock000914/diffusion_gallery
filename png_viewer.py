@@ -224,7 +224,7 @@ except Exception:
 # ══════════════════════════════════════════════════════════════════════════════
 #  定数・設定
 # ══════════════════════════════════════════════════════════════════════════════
-APP_VERSION  = "v2.38.7"
+APP_VERSION  = "v2.38.8"
 APP_NAME     = "Diffusion Gallery"
 VOLUME_MAX   = 400   # voice 音量スライダー上限(%)。100超は再生前 PCM 増幅(temp)で実現
 APP_AUTHOR   = "nemot"
@@ -11487,7 +11487,44 @@ class MainWindow(QMainWindow):
         self._update_preview(path)
         if hasattr(self, "_layout_preview") and self._layout_preview:
             self._layout_update_preview(path)
+        self._prefetch_full_for_open(path)  # [v2.38.8] dbl クリックに備え裏でフルデコード
         self._perf("クリック→メタ/プレビュー反映", (time.perf_counter() - _t0) * 1000)
+
+    def _prefetch_full_for_open(self, path: str):
+        """[v2.38.8] 選択時にフル解像度を裏デコードし、ビュアー初回表示(実測~169ms)を
+        キャッシュヒット化して短縮する。未完の直前プレフェッチはキャンセルし1件のみ維持。"""
+        if not path:
+            return
+        try:
+            if _mem_get(f"__fv__{path}:0") is not None:
+                return  # 既にキャッシュ済み
+        except Exception:
+            pass
+        prev = getattr(self, "_click_prefetch", None)
+        if prev is not None:
+            if getattr(prev, "_path", None) == path and prev.isRunning():
+                return  # 同じ画像のデコードが進行中 → 完了を待つ
+            prev.cancel()
+            try:
+                prev.finished.disconnect()
+            except Exception:
+                pass
+            try:
+                prev.deleteLater()
+            except Exception:
+                pass
+            self._click_prefetch = None
+        try:
+            loader = _PixmapLoader(path, 0, self)
+            loader.finished.connect(lambda l=loader: self._clear_click_prefetch(l))
+            self._click_prefetch = loader
+            loader.start()
+        except Exception:
+            self._click_prefetch = None
+
+    def _clear_click_prefetch(self, ldr) -> None:
+        if getattr(self, "_click_prefetch", None) is ldr:
+            self._click_prefetch = None
 
     @Slot(str, dict)
     def _on_meta_loaded(self, path: str, meta: dict):
@@ -11517,6 +11554,19 @@ class MainWindow(QMainWindow):
             self, path, paths, self._loop_mode,
             start_maximized=start_max)
         self._full_viewer._open_t0 = _t0
+        # [v2.38.8] 進行中のクリック先読みをビューアへ引き継ぎ（二重デコード回避）
+        cp = getattr(self, "_click_prefetch", None)
+        if cp is not None:
+            self._click_prefetch = None
+            try:
+                cp.finished.disconnect()
+            except Exception:
+                pass
+            if getattr(cp, "_path", None) == path and cp.isRunning():
+                try:
+                    self._full_viewer._prefetch[path] = cp
+                except Exception:
+                    pass
         self._perf("ビュアー構築", (time.perf_counter() - _t0) * 1000)
 
         def _on_fv_closed():
