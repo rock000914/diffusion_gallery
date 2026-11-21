@@ -224,7 +224,7 @@ except Exception:
 # ══════════════════════════════════════════════════════════════════════════════
 #  定数・設定
 # ══════════════════════════════════════════════════════════════════════════════
-APP_VERSION  = "v2.38.9"
+APP_VERSION  = "v2.38.10"
 APP_NAME     = "Diffusion Gallery"
 VOLUME_MAX   = 400   # voice 音量スライダー上限(%)。100超は再生前 PCM 増幅(temp)で実現
 APP_AUTHOR   = "nemot"
@@ -4675,9 +4675,13 @@ class _ThumbCell(QFrame):
         super().__init__(parent)
         self.path = path; self._size = size
         self._sel_state = None   # v2.06 P3: (selected, multi) の前回値
+        # [v2.38.10] QSS は各セル・クリック毎のスタイル再計算(実機合成負荷)ではなく
+        # paintEvent による自前描画(背景+枠線)・name label は setPalette で切り替える。
+        self._f_bg = PAL["bg3"]
+        self._f_bd = PAL["bg3"]
+        self._name_color = PAL["fg2"]
         self.setFixedSize(size + 6, size + 26)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setStyleSheet(f"QFrame{{background:{PAL['bg3']};border:2px solid {PAL['bg3']};border-radius:4px;}}")
 
         self._img_lbl = QLabel(self)
         self._img_lbl.setFixedSize(size, size)
@@ -4689,7 +4693,7 @@ class _ThumbCell(QFrame):
         self._name_lbl = QLabel(name, self)
         self._name_lbl.setFixedSize(size + 6, 20)
         self._name_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._name_lbl.setStyleSheet(f"color:{PAL['fg2']};font-size:8pt;background:transparent;border:none;")
+        self._name_lbl.setStyleSheet("font-size:8pt;background:transparent;border:none;")
         self._name_lbl.move(0, size + 4)
 
         # 系統バッジ（画像の左上に重ねて表示）
@@ -4726,19 +4730,32 @@ class _ThumbCell(QFrame):
             Qt.TransformationMode.SmoothTransformation))
 
     def set_selected(self, selected: bool, multi: bool = False):
+        # [v2.38.10] QSS を使わずパレットに色を設定する(QSS 再計算コストを除去)
         state = (bool(selected), bool(multi))
         if state == self._sel_state:
-            return  # v2.06 P3: 状態が変わった時だけ setStyleSheet（スクロール毎の再計算削減）
+            return  # v2.06 P3: 状態が変わった時だけ更新(スクロール毎の再計算削減)
         self._sel_state = state
         if multi:
-            bg = PAL["sel"]; bd = PAL["sel"]
+            self._f_bg = PAL["sel"]; self._f_bd = PAL["sel"]; self._name_color = "#fff"
         elif selected:
-            bg = PAL["sel_dim"]; bd = PAL["accent"]
+            self._f_bg = PAL["sel_dim"]; self._f_bd = PAL["accent"]; self._name_color = "#fff"
         else:
-            bg = PAL["bg3"]; bd = PAL["bg3"]
-        self.setStyleSheet(f"QFrame{{background:{bg};border:2px solid {bd};border-radius:4px;}}")
-        col = "#fff" if (selected or multi) else PAL["fg2"]
-        self._name_lbl.setStyleSheet(f"color:{col};font-size:8pt;background:transparent;border:none;")
+            self._f_bg = PAL["bg3"]; self._f_bd = PAL["bg3"]; self._name_color = PAL["fg2"]
+        pal = self._name_lbl.palette()
+        pal.setColor(QPalette.ColorRole.WindowText, QColor(self._name_color))
+        pal.setColor(QPalette.ColorRole.Text, QColor(self._name_color))
+        self._name_lbl.setPalette(pal)
+        self.update()
+
+    def paintEvent(self, _e):
+        """選択枠を自前で描画(setStyleSheet ではなく paintEvent を使う高速化)。"""
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        r = self.rect()
+        p.setPen(QPen(QColor(self._f_bd), 2, Qt.PenStyle.SolidLine))
+        p.setBrush(QBrush(QColor(self._f_bg)))
+        p.drawRoundedRect(r, 4, 4)
+        p.end()
 
     def mousePressEvent(self, e):
         if e.button() == Qt.MouseButton.LeftButton:
@@ -4826,11 +4843,12 @@ class _PixmapLoader(QThread):
     loaded  = Signal(str, QImage)    # (path, image) — 成功
     failed  = Signal(str, str)       # (path, error_msg) — 失敗
 
-    def __init__(self, path: str, rot: int, parent=None):
+    def __init__(self, path: str, rot: int, parent=None, fit_size=None):
         super().__init__(parent)
         self._path = path
         self._rot  = rot
         self._cancelled = False
+        self._fit_size = fit_size   # [v2.38.10] fit版ローダー用(viewportサイズ)。未設定ならフル画像
 
     def cancel(self):
         self._cancelled = True
@@ -4848,7 +4866,12 @@ class _PixmapLoader(QThread):
         try:
             t0 = time.perf_counter()  # v2.06 計測
             # [v2.05 FIX] T1: ワーカスレッドでは QImage のみ生成
-            qi = QImage(self._path)
+            qi = QImage()
+            if self._fit_size is not None:
+                # [v2.38.10] フルデコードより先に viewport 向けスケール版を即時生成
+                qi = _read_fit(self._path, self._fit_size)
+            if qi.isNull():
+                qi = QImage(self._path)
             if qi.isNull():
                 with Image.open(self._path) as pil:
                     if pil.mode not in ("RGB", "RGBA"):
@@ -4859,6 +4882,11 @@ class _PixmapLoader(QThread):
             if self._rot:
                 tf = QTransform().rotate(self._rot)
                 qi = qi.transformed(tf, Qt.TransformationMode.SmoothTransformation)
+            if self._fit_size is not None:
+                # fit版: _mem(`__fv__`)には格納せず、呼び出し側で即時表示(FullViewer._on_fit_loaded)
+                if not self._cancelled:
+                    self.loaded.emit(self._path, qi)
+                return
             with _mem_lock:
                 fv_keys = [k for k in list(_mem) if k.startswith("__fv__")]
                 if len(fv_keys) > 8:
@@ -4871,6 +4899,48 @@ class _PixmapLoader(QThread):
         except Exception as e:
             if not self._cancelled:
                 self.failed.emit(self._path, str(e))
+
+
+def _read_fit(path: str, target: QSize) -> QImage:
+    """viewport 向けスケール版のデコード。[v2.38.10]
+
+    フル解像度の `QImage(path)` より早く、指定サイズ以下の画像を返す。
+    第一パス: Qt(`QImageReader.setScaledSize`)
+    第二パス: Pillow(`draft` + `thumbnail`)
+    全て失敗時は空 QImage(呼び出し側が `QImage(path)` へフォールバック)。
+    """
+    tw = th = 0
+    try:
+        tw, th = target.width(), target.height()
+        if tw > 0 and th > 0:
+            r = QImageReader(path)
+            r.setAutoTransform(True)
+            try:
+                r.setScaledSize(QSize(tw, th))
+            except Exception:
+                pass
+            if r.canRead():
+                qi = r.read()
+                if not qi.isNull():
+                    return qi
+    except Exception:
+        pass
+    try:
+        with Image.open(path) as pil:
+            if pil.mode not in ("RGB", "RGBA"):
+                pil = pil.convert("RGBA")
+            try:
+                pil.draft("RGB", (max(1, tw), max(1, th)))
+            except Exception:
+                pass
+            if pil.width > tw or pil.height > th:
+                pil.thumbnail((tw, th), Image.Resampling.BILINEAR)
+            qi = pil_to_qimage(pil)
+            if not qi.isNull():
+                return qi
+    except Exception:
+        pass
+    return QImage()
 
 
 
@@ -4925,6 +4995,7 @@ class FullViewer(QDialog):
         self._hide_timer.timeout.connect(self._hide_ui)
         self._start_maximized = start_maximized  # 起動時に最大化するか
         self._pix_loader: _PixmapLoader | None = None  # 非同期デコードローダー
+        self._fit_loader: _PixmapLoader | None = None  # [v2.38.10] fit版ローダー(即時表示用)
 
         # 開いた時のウィンドウ状態を記録（全画面解除時に戻す）
         self._pre_fullscreen_maximized = False  # 全画面前が最大化だったか
@@ -5313,8 +5384,8 @@ class FullViewer(QDialog):
         大PNGは Qt でスケールデコード不可のため初回デコードが数百ms かかる
         （実測 169〜793ms）→ 体感待ち時間を短縮する。"""
         try:
-            if self._fit_mode != "fit":
-                return  # 原寸/ズーム中はプレビュー拡大が粗すぎるので差し替えない
+            if self._fit_mode == "actual" and self._zoom != 1.0:
+                return  # ズーム中はプレビュー拡大が粗すぎるので差し替えない
             mw = self.parent()
             grid = getattr(mw, "_grid", None)
             if grid is None:
@@ -5343,6 +5414,9 @@ class FullViewer(QDialog):
         if hasattr(self, "_pix_loader") and self._pix_loader is not None:
             self._pix_loader.cancel()
             self._pix_loader = None
+        if hasattr(self, "_fit_loader") and self._fit_loader is not None:
+            self._fit_loader.cancel()
+            self._fit_loader = None
         self._busy_timer.stop()          # 前回の待機表示予定を取り消す
         self._overlay_item.hide()
 
@@ -5375,6 +5449,14 @@ class FullViewer(QDialog):
         # [v2.38.9] フルデコード待ちの間、既存サムネイルを即時拡大表示して
         # ビューアを真っ白にしない（フル解像度は _on_pixmap_loaded が差し替える）。
         self._show_thumb_placeholder(path)
+
+        # [v2.38.10] フル到着より先に即座に表示する 2段階デコード:
+        # fit 版ローダーで viewport 向け画像を即時表示 → フル版到着時は静かな差し替え。
+        fit_loader = _PixmapLoader(path, self._rot, self, fit_size=self._fit_display_size())
+        fit_loader.loaded.connect(self._on_fit_loaded)
+        fit_loader.failed.connect(self._on_fit_failed)
+        self._fit_loader = fit_loader
+        fit_loader.start()
 
         loader = _PixmapLoader(path, self._rot, self)
         loader.loaded.connect(self._on_pixmap_loaded)
@@ -5493,6 +5575,50 @@ class FullViewer(QDialog):
                 sr.center().x() - br.width() / 2,
                 sr.center().y() - br.height() / 2)
         self._overlay_item.show()
+
+    @Slot(str, QImage)
+    def _on_fit_loaded(self, path: str, qi: QImage):
+        """[v2.38.10] fit 版(即時表示)到着。
+        フル版が到着しているなら差し替え不要(_on_pixmap_loaded 側で `_commit_new` 済み)。"""
+        try:
+            if not self._paths or path != self._paths[self._idx]:
+                return
+            if qi is None or qi.isNull():
+                return
+            if self._cur_path == path and self._shown_once:
+                return  # フル版済み → fit 差し替え不要
+            px = QPixmap.fromImage(qi)
+            mw = self.parent()
+            if hasattr(mw, "_compose_overlay"):
+                try:
+                    px = mw._compose_overlay(px, path, px.width(), px.height())
+                except Exception:
+                    pass
+            self._finish_transition()
+            self._commit_new(px)
+            self._cur_path = path
+            self._shown_once = True
+        except Exception:
+            pass
+
+    @Slot(str, str)
+    def _on_fit_failed(self, path: str, error: str):
+        """fit 版のみ失敗: フル版は到着すれば表示される(何もしない)。"""
+        if not self._paths or path != self._paths[self._idx]:
+            return
+
+    def _fit_display_size(self) -> QSize:
+        """[v2.38.10] fit 版デコード対象サイズ(現在のビューポートサイズ)。"""
+        try:
+            vp = self._scene_widget.viewport()
+            w, h = vp.width(), vp.height()
+            if w <= 0 or h <= 0:
+                w, h = self._scene_widget.width(), self._scene_widget.height()
+        except Exception:
+            w = h = 0
+        if w <= 0 or h <= 0:
+            w, h = 800, 600
+        return QSize(max(1, w), max(1, h))
 
     def _apply_view(self):
         """_fit_mode に基づいてビューの変換を設定する。
@@ -5793,6 +5919,13 @@ class FullViewer(QDialog):
                 self._pix_loader.terminate()
                 self._pix_loader.wait(500)
             self._pix_loader = None
+        if hasattr(self, "_fit_loader") and self._fit_loader is not None:
+            self._fit_loader.cancel()
+            self._fit_loader.wait(1000)
+            if self._fit_loader.isRunning():
+                self._fit_loader.terminate()
+                self._fit_loader.wait(300)
+            self._fit_loader = None
         self._busy_timer.stop()
         # [v2.35] 進行中のスライドアニメを確定させ、オーバーレイ残骸を残さない
         try:

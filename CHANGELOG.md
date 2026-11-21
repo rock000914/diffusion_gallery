@@ -4,6 +4,21 @@ PNG/画像メタデータビューア (PySide6版) — 更新履歴
 
 ---
 
+## [v2.38.10] 2026-11-21
+
+### 変更（ハイライト・タブルクリックの遅延を直す）
+- **背景**: `PERF_遅延調査.md` 結果で `dbl→初回画像表示` 169ms〜793ms が唯一の大項目（フルPNG初回デコード）、実機合成負荷の第2位に `setStyleSheet枠線`(セル・ハイライト時の毎回スタイル再計算)があった。両方に対してコード側の改善を落とし込んだ。
+- **タブルクリック（v2.38.10-A）**: フルデコード到着までビューアは真っ白だった。[png_viewer.py:`FullViewer._load_pixmap_async` 付近]
+  - フル版(`_PixmapLoader`)に加え、fit版ローダー(`_PixmapLoader(fit_size=...)` / `_read_fit` / `FullViewer._on_fit_loaded`)を**並列起動**。fit 版は `QImageReader.setScaledSize`(Qt) → Pillow `draft`+`thumbnail` の順で viewport サイズに縮小デコードし、`FullViewer._commit_new` で**即座に表示**する（`_cur_path` 設定のためぼかし防止のスキップも解消）。
+  - フル到着時は `_on_pixmap_loaded` の**静かな差し替え**(`_cur_path` 同一のため `_commit_new`)でビューア維持。fit 版経由でも `__fv__` メモリキャッシュ(`_mem`)には入らない（フル版のみ格納）。
+  - 画像操作順を変えるときのみ fit/full ローダーをキャンセル（`_load_pixmap_async` 先頭・`closeEvent`）。
+  - `_show_thumb_placeholder`(v2.38.9)の `fit_mode != "fit"` ガードを**すべてのモードで有効化**。原寸(actual)モードでもサムネ先行表示（ぼかしは数百ms以内に鮮明化）。
+- **ハイライト（v2.38.10-B）**: `_ThumbCell` の各セル・ハイライト時の `setStyleSheet`(frame 背景+枠線・name label 色)を**`paintEvent`(自前描画)+`setPalette`(name color)に置き換え**。QSS の再計算(実機合成負荷)を消す。
+  - `set_selected` は状態変化時だけ `update()`（色は従来どおり sel/sel_dim/accent/bg3/fg2 を流用）。
+- `APP_VERSION` を v2.38.9 → **v2.38.10**。
+
+---
+
 ## [v2.38.9] 2026-11-21
 
 ### 改善（デコード待ちの間サムネイルを即時表示し、ビュアーを真っ白にしない）
