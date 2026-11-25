@@ -143,7 +143,7 @@ Ctrl+ホイールでしか変えられなかった）。右カラム端にもフ
   8. QAction as QAction2 の重複インポートを削除
 """
 
-import sys, os, re, json, struct, zlib, shutil, hashlib, threading, pickle, time
+import sys, os, re, json, struct, zlib, shutil, hashlib, threading, pickle, time, base64, bisect
 import subprocess
 import random, webbrowser, csv, concurrent.futures
 import math
@@ -158,19 +158,20 @@ from PySide6.QtWidgets import (
     QScrollArea, QFrame, QLabel, QPushButton, QToolButton, QMenu,
     QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QCheckBox, QRadioButton,
     QSlider, QSpinBox, QDoubleSpinBox, QProgressBar, QStatusBar, QMenuBar, QToolBar,
-    QTreeView, QListWidget, QListWidgetItem, QTableView, QHeaderView,
+    QTreeView, QTreeWidget, QTreeWidgetItem, QListWidget, QListWidgetItem, QTableView, QHeaderView,
+    QDialogButtonBox,
     QFileDialog, QMessageBox, QInputDialog, QSizePolicy, QTableWidget, QTableWidgetItem,
     QAbstractItemView, QGroupBox, QTabWidget, QButtonGroup,
     QStyledItemDelegate, QStyleOptionViewItem, QStyle,
     QGraphicsView, QGraphicsScene, QGraphicsPixmapItem, QGraphicsOpacityEffect,
-    QSplashScreen,
+    QGraphicsEllipseItem, QGraphicsRectItem, QSplashScreen,
 )
 from PySide6.QtGui import (
     QPixmap, QImage, QIcon, QPainter, QColor, QFont, QFontMetrics,
     QPalette, QCursor, QKeySequence, QAction, QActionGroup,
     QStandardItemModel, QStandardItem,
-    QTransform, QBrush, QPen, QLinearGradient,
-    QDrag, QImageReader, QPainterPath,
+    QTransform, QBrush, QPen, QLinearGradient, QRegion,
+    QDrag, QImageReader, QPainterPath, QTextCursor,
 )
 from PySide6.QtWidgets import QFileSystemModel
 from PySide6.QtCore import (
@@ -184,7 +185,7 @@ from PySide6.QtCore import (
 )
 
 try:
-    from PIL import Image, ImageQt, ImageFilter, ImageStat
+    from PIL import Image, ImageQt, ImageFilter, ImageStat, ImageChops, ImageOps
 except ImportError:
     print(T("Pillow が見つかりません。pip install Pillow を実行してください。"))
     sys.exit(1)
@@ -224,7 +225,7 @@ except Exception:
 # ══════════════════════════════════════════════════════════════════════════════
 #  定数・設定
 # ══════════════════════════════════════════════════════════════════════════════
-APP_VERSION  = "v2.38.10"
+APP_VERSION  = "v2.42.2"
 APP_NAME     = "Diffusion Gallery"
 VOLUME_MAX   = 400   # voice 音量スライダー上限(%)。100超は再生前 PCM 増幅(temp)で実現
 APP_AUTHOR   = "nemot"
@@ -374,7 +375,7 @@ _I18N_TABLE = {
     '右クリックで系統をタグ付け': {"en": 'Right-click to tag the base model', "zh": '右键点击以标记基础模型', "ko": '우클릭으로 베이스 모델을 태그합니다'},
     '自動判定': {"en": 'Auto', "zh": '自动判定', "ko": '자동'},
     '並び替え(&R)': {"en": 'Sort(&R)', "zh": '排序(&R)', "ko": '정렬(&R)'},
-    'F': {"en": 'F', "zh": 'F', "ko": 'F'},
+    'フレーム': {"en": 'frames', "zh": '帧', "ko": '프레임'},
     'F1 キーボードショートカット': {"en": 'F1 Keyboard shortcuts', "zh": 'F1 键盘快捷键', "ko": 'F1 키보드 단축키'},
     'GB\n現行形式 .raw: ': {"en": 'GB\nCurrent .raw format: ', "zh": 'GB\n当前格式 .raw：', "ko": 'GB\n현재 형식 .raw: '},
     'LoRAを選択すると詳細が表示されます': {"en": 'Select a LoRA to see details', "zh": '选择 LoRA 后将显示详情', "ko": 'LoRA를 선택하면 상세가 표시됩니다'},
@@ -408,6 +409,21 @@ _I18N_TABLE = {
     '[年月]': {"en": '[year/month]', "zh": '[年月]', "ko": '[년월]'},
     '\\s*[日]': {"en": '\\s*[日]', "zh": '\\s*[日]', "ko": '\\s*[日]'},
     'image_quality_sorter.py を読み込めませんでした:\n': {"en": 'Could not load image_quality_sorter.py:\n', "zh": '无法加载 image_quality_sorter.py：\n', "ko": 'image_quality_sorter.py 를 불러올 수 없습니다:\n'},
+    '音声リアクティブ効果（EDM）': {"en": 'Audio-reactive effects (EDM)', "zh": '音频响应效果（EDM）', "ko": '오디오 반응 효과(EDM)'},
+    '音声に合わせて画像を変化': {"en": 'React to music', "zh": '让图片随音乐变化', "ko": '음악에 맞춰 이미지 변화'},
+    '輪郭パルス': {"en": 'Outline pulse', "zh": '轮廓脉冲', "ko": '윤곽 펄스'},
+    '拍ズーム': {"en": 'Beat zoom', "zh": '节拍缩放', "ko": '비트 줌'},
+    '波紋': {"en": 'Ripples', "zh": '波纹', "ko": '물결'},
+    '発光': {"en": 'Glow', "zh": '发光', "ko": '발광'},
+    'パーティクル': {"en": 'Particles', "zh": '粒子', "ko": '파티클'},
+    'フラッシュ（点滅に注意）': {"en": 'Flash (photosensitivity warning)', "zh": '闪光（注意光敏性）', "ko": '플래시(광과민성 주의)'},
+    'フラッシュを抑える': {"en": 'Reduce flashing', "zh": '降低闪烁', "ko": '깜빡임 완화'},
+    '効果:': {"en": 'Effects:', "zh": '效果：', "ko": '효과:'},
+    '効果の強さ:': {"en": 'Intensity:', "zh": '效果强度：', "ko": '효과 강도:'},
+    '同期オフセット:': {"en": 'Sync offset:', "zh": '同步偏移：', "ko": '동기 오프셋:'},
+    '初回解析は曲全体を読みます。完了までは従来のスライド動作を継続します。': {"en": 'The first analysis reads the whole track. Slideshow timing continues as before until it finishes.', "zh": '首次解析会读取整首曲目。完成前继续使用原有幻灯片动作。', "ko": '최초 분석은 전체 곡을 읽습니다. 완료될 때까지 기존 슬라이드 동작을 계속합니다.'},
+    '輪郭パルスはスライド切替のパルスとは別の効果です。': {"en": 'Outline pulse is separate from the slide-transition pulse.', "zh": '轮廓脉冲与幻灯片切换脉冲是不同效果。', "ko": '윤곽 펄스는 슬라이드 전환 펄스와 별개의 효과입니다.'},
+    'librosa が未導入のため音声リアクティブ効果は無効です': {"en": 'Audio-reactive effects are disabled because librosa is not installed', "zh": '未安装 librosa，音频响应效果已禁用', "ko": 'librosa 가 설치되지 않아 오디오 반응 효과가 비활성화됩니다'},
     'librosa が未導入のため波形同期は無効です': {"en": 'librosa is not installed, so waveform sync is disabled', "zh": '未安装 librosa，因此波形同步已禁用', "ko": 'librosa 가 설치되지 않아 파형 동기화가 비활성화됩니다'},
     'librosa が未導入のため自動検出できません': {"en": "Cannot auto-detect (librosa not installed)", "zh": "未安装 librosa，无法自动检测", "ko": "librosa 미설치로 자동 감지 불가"},
     'librosa が未導入のため自動検出は無効です': {"en": "Auto-detect disabled (librosa not installed)", "zh": "未安装 librosa，自动检测已禁用", "ko": "librosa 미설치로 자동 감지 비활성화"},
@@ -881,6 +897,76 @@ _I18N_TABLE = {
     '🎨 ロゴオーバーレイ': {"en": '🎨 Logo overlay', "zh": '🎨 Logo 叠加', "ko": '🎨 로고 오버레이'},
     '🎵 自動検出': {"en": "🎵 Auto-detect", "zh": "🎵 自动检测", "ko": "🎵 자동 감지"},
     '🎵 音楽': {"en": "🎵 Music", "zh": "🎵 音乐", "ko": "🎵 음악"},
+    '🎵 HMV': {"en": "🎵 HMV", "zh": "🎵 HMV", "ko": "🎵 HMV"},
+    'HMV (Hype Music Video)': {"en": "HMV (Hype Music Video)", "zh": "HMV（Hype Music Video）", "ko": "HMV (Hype Music Video)"},
+    'HMV': {"en": "HMV", "zh": "HMV", "ko": "HMV"},
+    'HMV 再生 / 一時停止 (S)': {"en": "HMV play / pause (S)", "zh": "HMV 播放 / 暂停 (S)", "ko": "HMV 재생 / 일시정지 (S)"},
+    'HMV 停止（先頭へ戻る）': {"en": "Stop HMV (return to start)", "zh": "停止 HMV（返回开头）", "ko": "HMV 중지(처음으로)"},
+    'HMV 音楽 ON/OFF': {"en": "HMV music ON/OFF", "zh": "HMV 音乐 ON/OFF", "ko": "HMV 음악 ON/OFF"},
+    'HMV 音楽 ON': {"en": "HMV music ON", "zh": "HMV 音乐 ON", "ko": "HMV 음악 ON"},
+    'HMV 音楽 OFF': {"en": "HMV music OFF", "zh": "HMV 音乐 OFF", "ko": "HMV 음악 OFF"},
+    'HMV 音量・速度・タグ': {"en": "HMV volume, speed and tags", "zh": "HMV 音量、速度和标签", "ko": "HMV 볼륨・속도・태그"},
+    'HMVタグに追加': {"en": "Add to HMV tags", "zh": "添加到HMV标签", "ko": "HMV 태그에 추가"},
+    '選択した{0}件をHMVタグに追加': {"en": "Add {0} selected items to HMV tags", "zh": "将所选的{0}项添加到HMV标签", "ko": "선택한 {0}항목을 HMV 태그에 추가"},
+    'HMVタグを追加しました（{0}タグ）': {"en": "Added {0} HMV tags", "zh": "已添加{0}个HMV标签", "ko": "HMV 태그 {0}개를 추가했습니다"},
+    'プロンプトタグが見つかりません': {"en": "No prompt tags found", "zh": "未找到提示词标签", "ko": "프롬프트 태그를 찾지 못했습니다"},
+    '同じタグを3〜6枚の塊で表示': {"en": "Show same-tag images in blocks of 3–6", "zh": "以3–6张为块显示相同标签的图片", "ko": "같은 태그 이미지를 3~6장 묶음으로 표시"},
+    'プロンプトからタグを選びます。複数選択時は、同じタグの画像を3〜6枚のランダムな塊で表示します。': {"en": "Select tags from prompts. Multiple selections play in randomized blocks of 3–6 images with the same tag.", "zh": "从提示词中选择标签。多选时以3–6张随机块显示相同标签的图片。", "ko": "프롬프트에서 태그를 선택합니다. 여러 개 선택 시 같은 태그의 이미지를 3~6장 랜덤 묶음으로 표시합니다."},
+    'EDM強化（拍ズーム・輪郭・波紋・粒子）': {"en": "EDM boost (beat zoom, outlines, ripples, particles)", "zh": "EDM增强（节拍缩放、轮廓、波纹、粒子）", "ko": "EDM 강화(박자 줌, 윤곽, 파동, 입자)"},
+    'ランダム選択時のみ有効です。チェックした種類だけを使います。': {"en": "Enabled only for random selection. Uses only the checked types.", "zh": "仅在随机选择时有效。只使用勾选的类型。", "ko": "랜덤 선택 시에만 활성화됩니다. 체크한 종류만 사용합니다."},
+    'ランダムで使う種類を1つ以上チェックしてください。': {"en": "Check at least one type for random selection.", "zh": "请至少勾选一种随机使用的类型。", "ko": "랜덤에서 사용할 종류를 하나 이상 체크하세요."},
+    'クイックメニューを表示': {"en": "Show quick menu", "zh": "显示快捷菜单", "ko": "빠른 메뉴 표시"},
+    'クイックメニューを開閉': {"en": "Toggle quick menu", "zh": "切换快捷菜单", "ko": "빠른 메뉴 열기/닫기"},
+    '全画面ビューアを開く': {"en": "Open full-screen viewer", "zh": "打开全屏查看器", "ko": "전체 화면 뷰어 열기"},
+    'HMV設定': {"en": "HMV settings", "zh": "HMV设置", "ko": "HMV 설정"},
+    'メタパネルを開閉': {"en": "Toggle metadata panel", "zh": "切换元数据面板", "ko": "메타데이터 패널 열기/닫기"},
+    'アクティビティログを開閉': {"en": "Toggle activity log", "zh": "切换活动日志", "ko": "활동 로그 열기/닫기"},
+    '表示レイアウト': {"en": "View layout", "zh": "显示布局", "ko": "표시 레이아웃"},
+    'スライド 再生 / 一時停止 (S)': {"en": "Slide play / pause (S)", "zh": "幻灯片 播放 / 暂停 (S)", "ko": "슬라이드 재생 / 일시정지 (S)"},
+    'スライド 停止（先頭へ戻る）': {"en": "Stop slide (return to start)", "zh": "停止幻灯片（返回开头）", "ko": "슬라이드 중지(처음으로)"},
+    'スライド音楽 ON/OFF': {"en": "Slide music ON/OFF", "zh": "幻灯片音乐 ON/OFF", "ko": "슬라이드 음악 ON/OFF"},
+    'スライド音楽 ON': {"en": "Slide music ON", "zh": "幻灯片音乐 ON", "ko": "슬라이드 음악 ON"},
+    'スライド音楽 OFF': {"en": "Slide music OFF", "zh": "幻灯片音乐 OFF", "ko": "슬라이드 음악 OFF"},
+    'スライドの音量・速度・タグ': {"en": "Slide volume, speed and tags", "zh": "幻灯片音量、速度和标签", "ko": "슬라이드 볼륨・속도・태그"},
+    '原寸': {"en": "Actual", "zh": "原始尺寸", "ko": "원본 크기"},
+    'fit': {"en": "fit", "zh": "适合", "ko": "맞춤"},
+    'スライドプリセット': {"en": "Slide presets", "zh": "幻灯片预设", "ko": "슬라이드 프리셋"},
+    'プリセット名:': {"en": "Preset name:", "zh": "预设名称：", "ko": "프리셋 이름:"},
+    '保存': {"en": "Save", "zh": "保存", "ko": "저장"},
+    'プリセット「{0}」を削除しますか？': {"en": "Delete preset \"{0}\"?", "zh": "删除预设“{0}”吗？", "ko": "프리셋 \"{0}\"을 삭제할까요?"},
+    'プリセット「{0}」を上書きしますか？': {"en": "Overwrite preset \"{0}\"?", "zh": "覆盖预设“{0}”吗？", "ko": "프리셋 \"{0}\"을 덮어쓸까요?"},
+    '環境設定（HMVタブへ）': {"en": "Settings (open HMV tab)", "zh": "环境设置（打开HMV标签）", "ko": "환경 설정(HMV 탭으로)"},
+    '曲をランダム再生': {"en": "Shuffle tracks", "zh": "随机播放曲目", "ko": "곡 무작위 재생"},
+    'HMV実行時に再生': {"en": "Play while HMV is running", "zh": "HMV运行时播放", "ko": "HMV 실행 중 재생"},
+    'スライドタグ': {"en": "Slide tags", "zh": "幻灯片标签", "ko": "슬라이드 태그"},
+    'プロンプトタグで選別': {"en": "Filter slideshow by prompt tags", "zh": "按提示词标签筛选幻灯片", "ko": "프롬프트 태그로 필터링"},
+    'タグを選択...': {"en": "Select tags...", "zh": "选择标签...", "ko": "태그 선택..."},
+    '選択なし': {"en": "None selected", "zh": "未选择", "ko": "선택 없음"},
+    '同じタグの画像を連続表示': {"en": "Show images with the same tag consecutively", "zh": "连续显示相同标签的图片", "ko": "같은 태그 이미지를 연속 표시"},
+    'HMV スライドタグ': {"en": "HMV slide tags", "zh": "HMV 幻灯片标签", "ko": "HMV 슬라이드 태그"},
+    'プロンプトからタグを選びます。複数選択時は、同じタグの画像を連続表示します。': {"en": "Select tags from prompts. Multiple selections are grouped so images with the same tag play consecutively.", "zh": "从提示词中选择标签。多选时按标签分组，连续显示相同标签的图片。", "ko": "프롬프트에서 태그를 선택합니다. 여러 개 선택 시 같은 태그의 이미지를 연속 표시합니다."},
+    'タグを検索...': {"en": "Search tags...", "zh": "搜索标签...", "ko": "태그 검색..."},
+    'タグ（画像数）': {"en": "Tag (image count)", "zh": "标签（图片数）", "ko": "태그(이미지 수)"},
+    '作品LoRA': {"en": "Work LoRAs", "zh": "作品LoRA", "ko": "작품 LoRA"},
+    'キャラクター・一般タグ': {"en": "Character / general tags", "zh": "角色・一般标签", "ko": "캐릭터・일반 태그"},
+    '選択をクリア': {"en": "Clear selection", "zh": "清除选择", "ko": "선택 지우기"},
+    '選択したタグに一致する画像がありません。': {"en": "No images match the selected tags.", "zh": "没有与所选标签匹配的图片。", "ko": "선택한 태그와 일치하는 이미지가 없습니다."},
+    'プロンプトタグが見つかりません。メタデータの読込を待ってから再試行してください。': {"en": "No prompt tags were found. Wait for metadata loading to finish and try again.", "zh": "未找到提示词标签。请等待元数据加载完成后重试。", "ko": "프롬프트 태그를 찾지 못했습니다. 메타데이터 로딩 후 다시 시도하세요."},
+    '{0}タグ・{1}枚': {"en": "{0} tags / {1} images", "zh": "{0}个标签・{1}张图片", "ko": "태그 {0}개・이미지 {1}장"},
+    'SFW / NSFW': {"en": "SFW / NSFW", "zh": "SFW / NSFW", "ko": "SFW / NSFW"},
+    '安全性フィルター': {"en": "Safety filter", "zh": "安全性筛选", "ko": "안전성 필터"},
+    'すべて（未分類を含む）': {"en": "All (including unclassified)", "zh": "全部（含未分类）", "ko": "전체(미분류 포함)"},
+    'SFWのみ': {"en": "SFW only", "zh": "仅SFW", "ko": "SFW만"},
+    'NSFWのみ': {"en": "NSFW only", "zh": "仅NSFW", "ko": "NSFW만"},
+    'SFW＋NSFWを交互': {"en": "Alternate SFW / NSFW", "zh": "SFW／NSFW交替", "ko": "SFW／NSFW 교차"},
+    '未分類': {"en": "Unclassified", "zh": "未分类", "ko": "미분류"},
+    'SFW': {"en": "SFW", "zh": "SFW", "ko": "SFW"},
+    'NSFW': {"en": "NSFW", "zh": "NSFW", "ko": "NSFW"},
+    '選択した条件に一致する画像がありません。': {"en": "No images match the selected conditions.", "zh": "没有符合所选条件的图片。", "ko": "선택한 조건과 일치하는 이미지가 없습니다."},
+    '右クリックから手動でSFW／NSFWを変更できます。': {"en": "Right-click an image to set SFW / NSFW manually.", "zh": "可通过右键手动设置SFW／NSFW。", "ko": "이미지를 우클릭하여 SFW／NSFW를 수동 설정할 수 있습니다."},
+    '※ フォルダ内の .mp3/.wav/.flac/.ogg/.m4a をHMV曲順でループ再生。拍同期は BGM の BPM のみ基準。': {"en": "※ Tracks in the folder loop in HMV order. Beat sync uses only the BGM BPM.", "zh": "※ 文件夹中的音频按HMV曲序循环播放。拍同步仅以BGM的BPM为基准。", "ko": "※ 폴더의 오디오를 HMV 곡 순서로 반복 재생합니다. 박자 동기는 BGM BPM만 기준으로 합니다."},
+    '※ 音量・速度・曲順・スライドタグはHMV中の 🔊 ボタン（ポップアップ）で調整します。': {"en": "※ Adjust volume, speed, track order and slide tags with the 🔊 popup during HMV.", "zh": "※ HMV播放中通过 🔊 弹出框调整音量、速度、曲序和幻灯片标签。", "ko": "※ HMV 재생 중 🔊 팝업에서 볼륨, 속도, 곡 순서, 슬라이드 태그를 조절합니다."},
+    'HMV スライド切替アニメーション': {"en": "HMV slide transition animation", "zh": "HMV 幻灯片切换动画", "ko": "HMV 슬라이드 전환 애니메이션"},
     '🏷 タグ一覧': {"en": '🏷 Tag list', "zh": '🏷 标签列表', "ko": '🏷 태그 목록'},
     '👀 このグループを表示': {"en": '👀 Show this group', "zh": '👀 显示此分组', "ko": '👀 이 그룹 표시'},
     '👀 選択グループをグリッド表示': {"en": '👀 Show selected groups in grid', "zh": '👀 以网格显示所选分组', "ko": '👀 선택 그룹을 그리드 표시'},
@@ -972,6 +1058,7 @@ def _resolve_cache_dir() -> Path:
 
 
 RATINGS_FILE = APP_DIR / "ratings.json"
+SAFETY_FILE = APP_DIR / "safety_overrides.json"
 QUALITY_CACHE_FILE = Path(os.environ.get("APPDATA", Path.home())) / "AIVideoManager" / "quality_cache.json"
 
 
@@ -1873,6 +1960,57 @@ def load_ratings() -> dict:
 def save_ratings(d: dict):
     _atomic_write_json(RATINGS_FILE, d)
 
+def load_safety_overrides() -> dict:
+    try:
+        raw = json.loads(SAFETY_FILE.read_text("utf-8"))
+    except Exception:
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    return {str(path): value for path, value in raw.items()
+            if value in ("sfw", "nsfw")}
+
+def save_safety_overrides(d: dict):
+    _atomic_write_json(SAFETY_FILE, d)
+
+SAFETY_OVERRIDES = load_safety_overrides()
+
+def apply_safety_overrides(paths: list[str], value: str):
+    global SAFETY_OVERRIDES
+    changed = 0
+    for path in paths:
+        key = str(path)
+        if value == "auto":
+            if key in SAFETY_OVERRIDES:
+                SAFETY_OVERRIDES.pop(key, None)
+                changed += 1
+        elif value in ("sfw", "nsfw"):
+            if SAFETY_OVERRIDES.get(key) != value:
+                SAFETY_OVERRIDES[key] = value
+                changed += 1
+    if changed:
+        save_safety_overrides(SAFETY_OVERRIDES)
+    return changed
+
+def rename_safety_override(old_path: str, new_path: str):
+    global SAFETY_OVERRIDES
+    old_key, new_key = str(old_path), str(new_path)
+    if old_key == new_key or old_key not in SAFETY_OVERRIDES:
+        return False
+    SAFETY_OVERRIDES[new_key] = SAFETY_OVERRIDES.pop(old_key)
+    save_safety_overrides(SAFETY_OVERRIDES)
+    return True
+
+def remove_safety_overrides(paths: list[str]):
+    global SAFETY_OVERRIDES
+    changed = 0
+    for path in paths:
+        if SAFETY_OVERRIDES.pop(str(path), None) is not None:
+            changed += 1
+    if changed:
+        save_safety_overrides(SAFETY_OVERRIDES)
+    return changed
+
 def load_quality_cache() -> dict:
     try:
         raw = json.loads(QUALITY_CACHE_FILE.read_text("utf-8"))
@@ -1888,6 +2026,8 @@ _RE_NEG       = re.compile(r"\nNegative prompt:", re.IGNORECASE)
 _RE_STEPS     = re.compile(r"\nSteps:", re.IGNORECASE)
 _RE_LORA      = re.compile(r"<lora:([^:>]+)(?::([^>]*))?>" )
 _RE_LORA_FULL = re.compile(r"^<lora:([^:>]+)(?::([^>]*))?>$", re.IGNORECASE)
+_RE_TAG_WEIGHT = re.compile(r":\d+(?:\.\d+)?$")
+_RE_PAREN_TAG = re.compile(r"^\((.*?)(?::\d+(?:\.\d+)?)?\)$")
 _RE_PARAM     = re.compile(r"(?:^|,\s*)(\w[\w\s]*):\s*([^,\n]+)", re.MULTILINE)
 
 def norm_tag(t: str) -> str:
@@ -1952,6 +2092,270 @@ def tags_match(tags: list[str], queries: list[str], require_all: bool = False) -
         return False
     hits = [any(q in t for t in norm_tags) for q in queries]
     return all(hits) if require_all else any(hits)
+
+
+HMV_ACT_TAGS = frozenset({
+    "paizuri", "fellatio", "oral", "blowjob", "handjob", "titfuck",
+    "sex", "vaginal", "anal", "masturbation", "cum", "creampie",
+})
+HMV_SAFETY_MODES = ("all", "sfw", "nsfw", "both")
+HMV_NSFW_TAGS = HMV_ACT_TAGS | frozenset({
+    "nsfw", "explicit", "rating:explicit", "nude", "nudity", "nipples",
+    "pussy", "penis", "uncensored", "sexual", "intercourse", "threesome",
+})
+HMV_SFW_TAGS = frozenset({"sfw", "safe", "rating:safe", "rating:sfw", "general"})
+HMV_TAG_CATEGORIES = ("act", "lora", "tag")
+HMV_PRESET_DEFAULTS = {
+    "ss_interval_frames": 180,
+    "ss_anim_enabled": False,
+    "ss_anim_type": "fade",
+    "ss_anim_ms": 350,
+    "ss_anim_pool": ["fade", "slide_lr", "slide_ud", "zoom", "pulse"],
+    "ss_anim_pulse_beats": 1,
+    "ss_bgm_speed": 1.0,
+    "ss_bgm_bpm": 0,
+    "ss_bgm_beat": 4,
+    "ss_bgm_wavesync": False,
+    "ss_audio_random": True,
+    "ss_reactive_enabled": False,
+    "ss_reactive_intensity": 65,
+    "ss_reactive_edm": True,
+    "ss_reactive_outline": True,
+    "ss_reactive_zoom": True,
+    "ss_reactive_ripple": True,
+    "ss_reactive_glow": True,
+    "ss_reactive_particles": True,
+    "ss_reactive_flash": False,
+    "ss_reactive_flash_safe": True,
+    "ss_reactive_offset_ms": 0,
+    "hmv_tag_filter": False,
+    "hmv_selected_tags": [],
+    "hmv_group_by_tag": True,
+    "hmv_safety_mode": "all",
+}
+HMV_PRESET_KEYS = tuple(HMV_PRESET_DEFAULTS)
+
+
+def _hmv_base_tag(tag: str) -> str:
+    value = norm_tag(tag)
+    while True:
+        stripped = _RE_TAG_WEIGHT.sub("", value)
+        match = _RE_PAREN_TAG.match(stripped)
+        if match:
+            stripped = match.group(1).strip()
+        if stripped == value:
+            return value
+        value = stripped
+
+
+def infer_image_safety(meta: dict) -> str:
+    tags = {_hmv_base_tag(raw) for raw in tag_list(meta.get("prompt", ""))}
+    if tags & HMV_NSFW_TAGS:
+        return "nsfw"
+    if tags & HMV_SFW_TAGS:
+        return "sfw"
+    return "sfw" if tags else "unknown"
+
+
+def image_safety(path: str, meta: dict | None = None,
+                 overrides: dict | None = None) -> str:
+    overrides = SAFETY_OVERRIDES if overrides is None else overrides
+    override = overrides.get(str(path))
+    if override in ("sfw", "nsfw"):
+        return override
+    return infer_image_safety(meta or {})
+
+
+def safety_display(value: str) -> str:
+    if value == "sfw":
+        return T("SFW")
+    if value == "nsfw":
+        return T("NSFW")
+    return T("未分類")
+
+
+def hmv_prompt_tags(meta: dict) -> dict[str, list[str]]:
+    loras = list(dict.fromkeys(_hmv_base_tag(x) for x in meta.get("loras", []) if x))
+    lora_set = set(loras)
+    acts: list[str] = []
+    tags: list[str] = []
+    seen: set[str] = set()
+    for raw in tag_list(meta.get("prompt", "")):
+        tag = _hmv_base_tag(raw)
+        if not tag or tag in seen or tag in lora_set:
+            continue
+        seen.add(tag)
+        if tag in HMV_ACT_TAGS:
+            acts.append(tag)
+        else:
+            tags.append(tag)
+    return {"act": acts, "lora": loras, "tag": tags}
+
+
+def hmv_tag_key(category: str, tag: str) -> str:
+    return f"{category}:{_hmv_base_tag(tag)}"
+
+
+def hmv_keys_from_prompt(text: str) -> list[str]:
+    keys: list[str] = []
+    for token in _split_prompt_tokens(text):
+        match = _RE_LORA_FULL.match(token.strip())
+        if match:
+            category, tag = "lora", match.group(1)
+        else:
+            tag = _hmv_base_tag(token)
+            category = "act" if tag in HMV_ACT_TAGS else "tag"
+        if tag:
+            key = hmv_tag_key(category, tag)
+            if key not in keys:
+                keys.append(key)
+    return keys
+
+
+def hmv_image_tag_entries(meta: dict) -> list[tuple[str, str, str]]:
+    extracted = hmv_prompt_tags(meta)
+    return [(tag, hmv_tag_key(category, tag), category)
+            for category in HMV_TAG_CATEGORIES for tag in extracted[category]]
+
+
+def hmv_tag_catalog(paths: list[str], meta_snap: dict) -> dict[str, list[tuple[str, int, str]]]:
+    counts = {category: {} for category in HMV_TAG_CATEGORIES}
+    for path in paths:
+        meta = meta_snap.get(path)
+        if not meta:
+            continue
+        extracted = hmv_prompt_tags(meta)
+        for category in HMV_TAG_CATEGORIES:
+            for tag in extracted[category]:
+                counts[category][tag] = counts[category].get(tag, 0) + 1
+    return {
+        category: [(tag, count, hmv_tag_key(category, tag))
+                   for tag, count in sorted(items.items(), key=lambda x: (-x[1], x[0]))]
+        for category, items in counts.items()
+    }
+
+
+def hmv_match_tag(meta: dict, selected: list[str]) -> str | None:
+    extracted = hmv_prompt_tags(meta)
+    available = {
+        hmv_tag_key(category, tag)
+        for category in HMV_TAG_CATEGORIES
+        for tag in extracted[category]
+    }
+    return next((key for key in selected if key in available), None)
+
+
+def _hmv_make_blocks(paths: list[str]) -> list[list[str]]:
+    if not paths:
+        return []
+    shuffled = list(paths)
+    random.shuffle(shuffled)
+    block_count = max(1, math.ceil(len(shuffled) / 6))
+    base, remainder = divmod(len(shuffled), block_count)
+    sizes = [base + 1] * remainder + [base] * (block_count - remainder)
+    random.shuffle(sizes)
+    blocks = []
+    offset = 0
+    for size in sizes:
+        blocks.append(shuffled[offset:offset + size])
+        offset += size
+    return blocks
+
+
+def _hmv_alternating_blocks(paths: list[str], safety_by_path: dict) -> list[list[str]]:
+    sfw = _hmv_make_blocks([path for path in paths if safety_by_path.get(path) == "sfw"])
+    nsfw = _hmv_make_blocks([path for path in paths if safety_by_path.get(path) == "nsfw"])
+    blocks = []
+    while sfw or nsfw:
+        if sfw:
+            blocks.append(sfw.pop(0))
+        if nsfw:
+            blocks.append(nsfw.pop(0))
+    return blocks
+
+
+def hmv_build_playlist(paths: list[str], meta_snap: dict, selected: list[str],
+                       group_by_tag: bool = True,
+                       safety_mode: str = "all") -> list[str]:
+    mode = safety_mode if safety_mode in HMV_SAFETY_MODES else "all"
+    safety_by_path = {
+        path: image_safety(path, meta_snap.get(path)) for path in paths
+    }
+    if mode != "all":
+        allowed = {"sfw", "nsfw"} if mode == "both" else {mode}
+        paths = [path for path in paths if safety_by_path.get(path) in allowed]
+    if not paths:
+        return []
+    if not selected:
+        if mode == "both":
+            return [path for block in _hmv_alternating_blocks(paths, safety_by_path)
+                    for path in block]
+        return list(paths)
+    groups = {key: [] for key in selected}
+    for path in paths:
+        meta = meta_snap.get(path)
+        if not meta:
+            continue
+        match = hmv_match_tag(meta, selected)
+        if match is not None:
+            groups[match].append(path)
+    if mode == "both":
+        queues = {
+            key: blocks for key, group in groups.items()
+            if (blocks := _hmv_alternating_blocks(group, safety_by_path))
+        }
+        playlist: list[str] = []
+        previous = None
+        while any(queues.values()):
+            choices = [key for key, blocks in queues.items() if blocks and key != previous]
+            if not choices:
+                choices = [key for key, blocks in queues.items() if blocks]
+            most_blocks = max(len(queues[key]) for key in choices)
+            choices = [key for key in choices if len(queues[key]) == most_blocks]
+            key = random.choice(choices)
+            playlist.extend(queues[key].pop(0))
+            previous = key
+        return playlist
+    if not group_by_tag:
+        shuffled = [path for group in groups.values() for path in group]
+        random.shuffle(shuffled)
+        return shuffled
+    queues = {}
+    block_counts = {}
+    for key, group in groups.items():
+        if not group:
+            continue
+        block_counts[key] = max(1, math.ceil(len(group) / 6))
+    if block_counts and any(
+            count > sum(block_counts.values()) - count + 1
+            for count in block_counts.values()):
+        max_blocks = max(block_counts.values())
+        block_counts = {key: min(len(groups[key]), max_blocks) for key in block_counts}
+    for key, group in groups.items():
+        if not group:
+            continue
+        random.shuffle(group)
+        block_count = block_counts[key]
+        base, remainder = divmod(len(group), block_count)
+        sizes = [base + 1] * remainder + [base] * (block_count - remainder)
+        random.shuffle(sizes)
+        queues[key] = []
+        offset = 0
+        for size in sizes:
+            queues[key].append(group[offset:offset + size])
+            offset += size
+    playlist = []
+    previous = None
+    while any(queues.values()):
+        choices = [key for key, blocks in queues.items() if blocks and key != previous]
+        if not choices:
+            choices = [key for key, blocks in queues.items() if blocks]
+        most_blocks = max(len(queues[key]) for key in choices)
+        choices = [key for key in choices if len(queues[key]) == most_blocks]
+        key = random.choice(choices)
+        playlist.extend(queues[key].pop(0))
+        previous = key
+    return playlist
 
 # ── 詳細検索 (v2.10) ───────────────────────────────────────────────────────
 # 検索バーの照合対象スコープ。デフォルトは「タグ + ファイル名」= 従来のタグ検索＋ファイル名。
@@ -2287,17 +2691,7 @@ def _decode_png_text_chunk(chunk_type: bytes, data: bytes):
 
 
 def _read_png_text_chunks(path: str) -> dict:
-    """PNGのテキストチャンクをPillow不使用で直接バイナリ読み取りする（高速）。
-
-    従来は tEXt のみ・IDAT で打ち切りだった。ComfyUI などは **iTXt を IDAT の後**
-    に書くため速い方が拾えず、Pillow 経路（重い／IDAT後を読む前に打ち切られる場合
-    がある）に落ちていた。tEXt/zTXt/iTXt を位置に関係なく辿れるよう、画像データは
-    読まずにシークで飛ばす。失敗時は空dict。
-
-    早期終了は読み手が優先する `parameters` を見つけたときだけで、`prompt` しか
-    無いファイルは IEND まで辿る（`prompt` が先・`parameters` が後 の並びで優先キー
-    を取り逃がさないため）。
-    """
+    """PNGのtEXt/zTXt/iTXtをIENDまで読み、ComfyUIとWebUIの併存にも対応する。"""
     result = {}
     try:
         with open(path, "rb") as f:
@@ -2321,8 +2715,6 @@ def _read_png_text_chunks(path: str) -> dict:
                         key, val = entry
                         if val and key not in result:
                             result[key] = val
-                        if "parameters" in result:
-                            break  # 読み手が優先するキーが取れたら以降は不要
                     continue
                 f.seek(length, 1)
                 f.read(4)  # CRC
@@ -2331,6 +2723,274 @@ def _read_png_text_chunks(path: str) -> dict:
     except Exception:
         pass
     return result
+
+
+def _comfy_lora_name(value) -> str:
+    name = str(value or "").strip().replace("\\", "/")
+    if name.lower().endswith((".safetensors", ".ckpt", ".pt", ".bin", ".pth")):
+        name = os.path.splitext(name)[0]
+    return name
+
+
+def _extract_comfy_nodes(nodes: dict) -> dict | None:
+    if not nodes:
+        return None
+
+    def ref(value):
+        if isinstance(value, (list, tuple)) and value:
+            return str(value[0])
+        return None
+
+    def collect_text(node_id, seen=None):
+        seen = set() if seen is None else seen
+        if node_id in seen:
+            return []
+        seen.add(node_id)
+        node = nodes.get(node_id)
+        if not isinstance(node, dict):
+            return []
+        inputs = node.get("inputs") or {}
+        class_type = str(node.get("class_type", "")).lower()
+        if "cliptextencode" in class_type:
+            text = inputs.get("text")
+            return [str(text).strip()] if text is not None and str(text).strip() else []
+        texts = []
+        for value in inputs.values():
+            child = ref(value)
+            if child is not None:
+                texts.extend(collect_text(child, seen))
+        return texts
+
+    def collect_model(node_id, seen=None):
+        seen = set() if seen is None else seen
+        if node_id in seen:
+            return ""
+        seen.add(node_id)
+        node = nodes.get(node_id)
+        if not isinstance(node, dict):
+            return ""
+        inputs = node.get("inputs") or {}
+        for key in ("unet_name", "ckpt_name", "model_name"):
+            value = inputs.get(key)
+            if value:
+                return str(value).strip()
+        for value in inputs.values():
+            child = ref(value)
+            if child is not None:
+                found = collect_model(child, seen)
+                if found:
+                    return found
+        return ""
+
+    def collect_input(node_id, keys, seen=None):
+        seen = set() if seen is None else seen
+        if node_id in seen:
+            return ""
+        seen.add(node_id)
+        node = nodes.get(node_id)
+        if not isinstance(node, dict):
+            return ""
+        inputs = node.get("inputs") or {}
+        for key in keys:
+            value = inputs.get(key)
+            if value is not None and not isinstance(value, (list, tuple, dict)) and str(value).strip():
+                return value
+        for value in inputs.values():
+            child = ref(value)
+            if child is not None:
+                found = collect_input(child, keys, seen)
+                if found != "":
+                    return found
+        return ""
+
+    def is_class(node, word):
+        return isinstance(node, dict) and word in str(node.get("class_type", "")).lower()
+
+    sampler_entries = [(node_id, node) for node_id, node in nodes.items()
+                       if is_class(node, "sampler") and isinstance(node.get("inputs"), dict)]
+    standard = next(((node_id, node) for node_id, node in sampler_entries
+                     if "positive" in node["inputs"] and "negative" in node["inputs"]), None)
+    custom = next(((node_id, node) for node_id, node in sampler_entries
+                   if "positive" not in node["inputs"]), None)
+    guider = next(((node_id, node) for node_id, node in nodes.items()
+                   if isinstance(node, dict) and is_class(node, "guider")
+                   and "positive" in (node.get("inputs") or {})
+                   and "negative" in (node.get("inputs") or {})), None)
+    sampler_id, sampler = standard or custom or (None, None)
+    text_source_id = sampler_id if standard else (guider[0] if guider else None)
+    positive = negative = ""
+    steps = cfg = sampler_name = seed = scheduler = ""
+    if text_source_id is not None:
+        inputs = nodes[text_source_id].get("inputs") or {}
+        positive = ", ".join(dict.fromkeys(
+            text for text in collect_text(ref(inputs.get("positive"))) if text))
+        negative = ", ".join(dict.fromkeys(
+            text for text in collect_text(ref(inputs.get("negative"))) if text))
+
+    scheduler_id = selector_id = noise_id = None
+    if custom:
+        inputs = custom[1].get("inputs") or {}
+        scheduler_id = ref(inputs.get("sigmas"))
+        selector_id = ref(inputs.get("sampler"))
+        noise_id = ref(inputs.get("noise"))
+    if scheduler_id not in nodes:
+        scheduler_id = next((node_id for node_id, node in nodes.items()
+                             if is_class(node, "scheduler") and "sampler" not in str(node.get("class_type", "")).lower()), None)
+    if selector_id not in nodes:
+        selector_id = next((node_id for node_id, node in nodes.items()
+                            if is_class(node, "sampler") and "sampler_name" in (node.get("inputs") or {})), None)
+
+    if standard:
+        inputs = standard[1]["inputs"]
+        steps = inputs.get("steps", "")
+        cfg = inputs.get("cfg", "")
+        sampler_name = inputs.get("sampler_name", "")
+        seed = inputs.get("seed", "")
+        scheduler = inputs.get("scheduler", "")
+    else:
+        if guider:
+            cfg = (guider[1].get("inputs") or {}).get("cfg", "")
+        steps = collect_input(scheduler_id, ("steps",))
+        sampler_name = collect_input(selector_id, ("sampler_name",))
+        scheduler = collect_input(scheduler_id, ("scheduler",))
+        seed = collect_input(noise_id, ("noise_seed", "seed"))
+        if seed == "":
+            seed = next((node["inputs"]["noise_seed"] for node in nodes.values()
+                         if isinstance(node, dict) and "noise_seed" in (node.get("inputs") or {})), "")
+
+    if text_source_id is None:
+        for node in nodes.values():
+            if not isinstance(node, dict) or "cliptextencode" not in str(node.get("class_type", "")).lower():
+                continue
+            title = str((node.get("_meta") or {}).get("title", "")).lower()
+            text = str((node.get("inputs") or {}).get("text", "")).strip()
+            if text and ("negative" in title or title.startswith("neg")):
+                negative = text
+            elif text and ("positive" in title or title.startswith("pos")):
+                positive = text
+
+    model = ""
+    if text_source_id is not None:
+        model = collect_model(ref((nodes[text_source_id].get("inputs") or {}).get("model")))
+    if not model:
+        for node_id, node in nodes.items():
+            if isinstance(node, dict):
+                model = collect_model(node_id)
+                if model:
+                    break
+    loras = []
+    width = height = ""
+    for node in nodes.values():
+        if not isinstance(node, dict):
+            continue
+        inputs = node.get("inputs") or {}
+        class_type = str(node.get("class_type", "")).lower()
+        if "lora" in class_type:
+            name = _comfy_lora_name(inputs.get("lora_name"))
+            if name and name not in loras:
+                loras.append(name)
+        if not width and inputs.get("width") and inputs.get("height"):
+            width, height = inputs["width"], inputs["height"]
+    if not model and not positive and not negative and not loras:
+        return None
+    params = []
+    if steps != "":
+        params.append(f"Steps: {steps}")
+    if cfg != "":
+        params.append(f"CFG scale: {cfg}")
+    if sampler_name:
+        params.append(f"Sampler: {sampler_name}")
+    if scheduler:
+        params.append(f"Scheduler: {scheduler}")
+    if seed != "":
+        params.append(f"Seed: {seed}")
+    if width and height:
+        params.append(f"Size: {width}x{height}")
+    if model:
+        params.append(f"Model: {model}")
+    return {"prompt": positive, "negative": negative, "param_line": ", ".join(params),
+            "model": model, "loras": loras, "steps": steps, "cfg": cfg,
+            "sampler": sampler_name, "seed": seed, "width": width, "height": height}
+
+
+def _parse_comfy_workflow(data: dict) -> dict | None:
+    raw_nodes = data.get("nodes")
+    if not isinstance(raw_nodes, list):
+        return None
+    links = {str(link[0]): link for link in data.get("links", [])
+             if isinstance(link, list) and len(link) >= 5}
+    nodes = {}
+    sampler_names = {"euler", "euler_ancestral", "heun", "dpm_2", "dpm_2_ancestral",
+                     "lms", "dpm_fast", "dpm_adaptive", "dpmpp_2m", "dpmpp_sde",
+                     "dpmpp_2m_sde", "ddim", "uni_pc", "uni_pc_bh2", "er_sde"}
+    schedulers = {"normal", "karras", "exponential", "sgm_uniform", "simple", "ddim_uniform",
+                  "beta", "linear_quadratic", "cosine"}
+    for raw in raw_nodes:
+        if not isinstance(raw, dict) or "id" not in raw:
+            continue
+        class_type = str(raw.get("type", ""))
+        values = raw.get("widgets_values") or []
+        inputs = {}
+        for item in raw.get("inputs") or []:
+            if not isinstance(item, dict) or item.get("link") is None:
+                continue
+            link = links.get(str(item["link"]))
+            if link is not None:
+                inputs[str(item.get("name", ""))] = [str(link[1]), 0]
+        low = class_type.lower()
+        if "cliptextencode" in low and values:
+            inputs["text"] = values[0]
+        elif "loraloader" in low and values:
+            inputs["lora_name"] = values[0]
+        elif "unetloader" in low and values:
+            inputs["unet_name"] = values[0]
+        elif "checkpointloader" in low and values:
+            inputs["ckpt_name"] = values[0]
+        elif "emptylatentimage" in low and len(values) >= 2:
+            inputs["width"], inputs["height"] = values[0], values[1]
+        elif "resolution" in low:
+            pair = next(((values[i], values[i + 1]) for i in range(len(values) - 1)
+                         if isinstance(values[i], int) and isinstance(values[i + 1], int)
+                         and 64 <= values[i] <= 8192 and 64 <= values[i + 1] <= 8192), None)
+            if pair:
+                inputs["width"], inputs["height"] = pair
+        elif "cfgguider" in low and values:
+            inputs["cfg"] = values[0]
+        elif "scheduler" in low:
+            inputs["steps"] = next((v for v in values if isinstance(v, int) and 0 < v <= 10000), "")
+            inputs["scheduler"] = next((v for v in values if isinstance(v, str) and v in schedulers), "")
+        elif "ksamplerselect" in low and values:
+            inputs["sampler_name"] = values[0]
+        elif "randomnoise" in low and values:
+            inputs["noise_seed"] = values[0]
+        elif "sampler" in low:
+            if values:
+                inputs["seed"] = values[0]
+            step_index = next((i for i, v in enumerate(values[1:], 1)
+                               if isinstance(v, int) and 0 < v <= 10000), None)
+            if step_index is not None:
+                inputs["steps"] = values[step_index]
+                inputs["cfg"] = next((v for v in values[step_index + 1:]
+                                      if isinstance(v, (int, float)) and 0 < v <= 100), "")
+            inputs["sampler_name"] = next((v for v in values if isinstance(v, str) and v in sampler_names), "")
+            inputs["scheduler"] = next((v for v in values if isinstance(v, str) and v in schedulers), "")
+        nodes[str(raw["id"])] = {"id": raw["id"], "class_type": class_type,
+                                  "inputs": inputs, "_meta": {"title": raw.get("title", "")}}
+    return _extract_comfy_nodes(nodes)
+
+
+def _parse_comfy_metadata(raw: str) -> dict | None:
+    try:
+        data = json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    if isinstance(data.get("nodes"), list):
+        return _parse_comfy_workflow(data)
+    nodes = {str(key): value for key, value in data.items()
+             if isinstance(value, dict) and "class_type" in value}
+    return _extract_comfy_nodes(nodes)
 
 
 def parse_meta(path: str) -> dict:
@@ -2359,35 +3019,53 @@ def parse_meta(path: str) -> dict:
         pass
 
     # ── rawパラメータ文字列の取得 ─────────────────────────────────────────
+    raw = ""
+    comfy_raws: list[str] = []
     try:
         ext = os.path.splitext(path)[1].lower()
-        raw = ""
 
         # PNG: tEXtチャンクを直接バイナリ読み取り（Pillow不使用・高速）
         if ext == ".png":
             chunks = _read_png_text_chunks(path)
-            raw = chunks.get("parameters", "") or chunks.get("prompt", "")
+            raw = chunks.get("parameters", "")
+            comfy_raws = [chunks[key] for key in ("prompt", "workflow") if chunks.get(key)]
 
         # JPG / WebP / その他: Pillow でEXIF・XMP抽出（遅延ロードのまま）
-        if not raw:
+        if not raw and not comfy_raws:
             try:
                 img = Image.open(path)
                 # img.info はヘッダーのみ（ピクセル展開なし）
                 info = img.info or {}
-                if not raw:
-                    raw = info.get("parameters", "") or info.get("prompt", "")
-                if not raw:
+                raw = info.get("parameters", "")
+                comfy_raws = [info[key] for key in ("prompt", "workflow") if info.get(key)]
+                if not raw and not comfy_raws:
                     raw = _extract_raw_from_exif(img)
             except Exception:
                 pass
 
-        r["raw"] = raw
+        r["raw"] = raw or (comfy_raws[0] if comfy_raws else "")
     except Exception as e:
         r["raw"] = f"{Te('[メタ取得エラー: ')}{e}]"
         return r
 
     if not r["raw"]:
         return r
+
+    comfy = None
+    for comfy_raw in comfy_raws:
+        comfy = _parse_comfy_metadata(comfy_raw)
+        if comfy:
+            break
+    if comfy:
+        width, height = r.get("width", ""), r.get("height", "")
+        r.update(comfy)
+        r["width"] = width or r.get("width", "")
+        r["height"] = height or r.get("height", "")
+        for key in ("steps", "cfg", "sampler", "seed", "width", "height"):
+            if r.get(key) is not None:
+                r[key] = str(r[key])
+        if not raw:
+            return r
 
     # ── SD生成パラメータ解析 ──────────────────────────────────────────────
     try:
@@ -2421,6 +3099,12 @@ def parse_meta(path: str) -> dict:
             [n for n, _ in _RE_LORA.findall(r["prompt"])] +
             [n for n, _ in _RE_LORA.findall(r["param_line"])]
         ))
+        if comfy:
+            r["model"] = r["model"] or comfy["model"]
+            r["loras"] = list(dict.fromkeys(r["loras"] + comfy["loras"]))
+            for key in ("steps", "cfg", "sampler", "seed"):
+                if not r.get(key) and comfy.get(key):
+                    r[key] = str(comfy[key])
     except Exception as e:
         r["raw"] += f"{Te('␜n[パラメータ解析エラー: ')}{e}]"
     return r
@@ -2508,14 +3192,24 @@ def _mem_put(k: str, image) -> None:
                 del _mem[oldest]
 
 
+def _thumb_pixel_size(size: int, pixel_ratio: float = 1.0) -> int:
+    return max(1, int(round(max(1.0, float(pixel_ratio)) * max(1, int(size)))))
+
+
+def _thumb_mem_key(path: str, size: int, pixel_ratio: float = 1.0) -> str:
+    return f"{path}:{size}:{float(pixel_ratio):.4f}"
+
+
 def _cache_key(path: str, size: int) -> Path:
     try: mt = f"{os.path.getmtime(path):.0f}"
     except Exception: mt = "0"
     h = hashlib.md5(f"{path}:{size}:{mt}".encode()).hexdigest()
     return CACHE_DIR / f"{h}.raw"
 
-def load_thumb_image(path: str, size: int) -> QImage | None:
-    k = f"{path}:{size}"
+def load_thumb_image(path: str, size: int, pixel_ratio: float = 1.0) -> QImage | None:
+    pixel_ratio = max(1.0, float(pixel_ratio))
+    pixel_size = _thumb_pixel_size(size, pixel_ratio)
+    k = _thumb_mem_key(path, size, pixel_ratio)
     t0 = time.perf_counter()
     cached = _mem_get(k)
     if cached is not None:
@@ -2525,20 +3219,21 @@ def load_thumb_image(path: str, size: int) -> QImage | None:
         if isinstance(cached, QPixmap):
             return cached.toImage()
         return None
-    ck = _cache_key(path, size)
+    ck = _cache_key(path, pixel_size)
     qi = None
     try:
         with ck.open("rb") as cache:
-            raw = cache.read(11 + (size * 4 + 3) * size + 1)
+            raw = cache.read(11 + (pixel_size * 4 + 3) * pixel_size + 1)
         if len(raw) >= 11 and raw[:4] == b"RAWX":
             w = int.from_bytes(raw[4:6], "little")
             h = int.from_bytes(raw[6:8], "little")
             ch = raw[8]
             bpl = int.from_bytes(raw[9:11], "little")
-            if (0 < w <= size and 0 < h <= size and ch in (3, 4)
+            if (0 < w <= pixel_size and 0 < h <= pixel_size and ch in (3, 4)
                     and w * ch <= bpl <= w * ch + 3 and len(raw) == 11 + bpl * h):
                 fmt = QImage.Format.Format_RGB888 if ch == 3 else QImage.Format.Format_RGBA8888
                 image = QImage(raw[11:], w, h, bpl, fmt).copy()
+                image.setDevicePixelRatio(pixel_ratio)
                 if not image.isNull():
                     qi = image
                     _record_load("thumb_disk", t0)
@@ -2553,8 +3248,8 @@ def load_thumb_image(path: str, size: int) -> QImage | None:
                 orig = reader.size()
                 if orig.isValid() and orig.width() > 0 and orig.height() > 0:
                     ow, oh = orig.width(), orig.height()
-                    if ow > size or oh > size:
-                        ratio = min(size / ow, size / oh)
+                    if ow > pixel_size or oh > pixel_size:
+                        ratio = min(pixel_size / ow, pixel_size / oh)
                         reader.setScaledSize(QSize(max(1, int(ow * ratio)), max(1, int(oh * ratio))))
                 image = reader.read()
                 if not image.isNull():
@@ -2564,13 +3259,13 @@ def load_thumb_image(path: str, size: int) -> QImage | None:
             if qi is None:
                 with Image.open(path) as pil:
                     if pil.format == "JPEG":
-                        pil.draft("RGB", (size, size))
-                    pil.thumbnail((size, size), Image.Resampling.BILINEAR)
+                        pil.draft("RGB", (pixel_size, pixel_size))
+                    pil.thumbnail((pixel_size, pixel_size), Image.Resampling.BILINEAR)
                     qi = pil_to_qimage(pil)
             if qi.isNull():
                 return None
-            if qi.width() > size or qi.height() > size:
-                qi = qi.scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio,
+            if qi.width() > pixel_size or qi.height() > pixel_size:
+                qi = qi.scaled(pixel_size, pixel_size, Qt.AspectRatioMode.KeepAspectRatio,
                                Qt.TransformationMode.SmoothTransformation)
 
             ch = 4 if qi.hasAlphaChannel() else 3
@@ -2586,13 +3281,14 @@ def load_thumb_image(path: str, size: int) -> QImage | None:
                     cache.cancelWriting()
             _record_load("thumb_decode", t0)
 
+        qi.setDevicePixelRatio(pixel_ratio)
         _mem_put(k, qi.copy())
         return qi
     except Exception:
         return None
 
-def load_thumb(path: str, size: int) -> QPixmap | None:
-    qi = load_thumb_image(path, size)
+def load_thumb(path: str, size: int, pixel_ratio: float = 1.0) -> QPixmap | None:
+    qi = load_thumb_image(path, size, pixel_ratio)
     if qi is None:
         return None
     if isinstance(qi, QImage):
@@ -3909,9 +4605,10 @@ class ThumbLoader(QRunnable):
     class Signals(QObject):
         loaded = Signal(str, object, int, object)
 
-    def __init__(self, path: str, size: int, generation: int):
+    def __init__(self, path: str, size: int, generation: int, pixel_ratio: float = 1.0):
         super().__init__()
         self.path = path; self.size = size; self.generation = generation
+        self.pixel_ratio = max(1.0, float(pixel_ratio))
         self.request_id = object()
         self.signals = ThumbLoader.Signals()
         self.setAutoDelete(True)
@@ -3921,7 +4618,7 @@ class ThumbLoader(QRunnable):
 
     def run(self):
         if self._cancelled: return
-        img = load_thumb_image(self.path, self.size)
+        img = load_thumb_image(self.path, self.size, self.pixel_ratio)
         if img is not None and not self._cancelled:
             self.signals.loaded.emit(self.path, img, self.generation, self.request_id)
 
@@ -4358,7 +5055,7 @@ class VirtualGrid(QWidget):
                 cell.set_pixmap(self._pixmap_cache[path])
             else:
                 if path not in self._live_loaders:
-                    loader = ThumbLoader(path, self._thumb_size, gen)
+                    loader = ThumbLoader(path, self._thumb_size, gen, self.devicePixelRatioF())
                     self._live_loaders[path] = loader
                     loader.signals.loaded.connect(self._on_thumb_loaded)
                     self._pool.start(loader, priority=1)
@@ -4378,8 +5075,19 @@ class VirtualGrid(QWidget):
         self._render_timer.start()
 
     def _refresh_cell_colors(self):
-        for path, cell in self._visible_cells.items():
-            cell.set_selected(path == self._selected, path in self._multi_sel)
+        if not self._multi_sel:
+            selected_cell = self._visible_cells.get(self._selected)
+            if selected_cell is not None:
+                selected_cell.set_selected(True)
+            for path, cell in self._visible_cells.items():
+                if path != self._selected:
+                    cell.set_selected(False)
+            return
+        for selected_pass in (True, False):
+            for path, cell in self._visible_cells.items():
+                selected = path == self._selected or path in self._multi_sel
+                if selected == selected_pass:
+                    cell.set_selected(selected, path in self._multi_sel)
 
     def _apply_badge(self, cell):
         """セルの系統バッジを META キャッシュから設定する（I/O なし peek 使用）。"""
@@ -4387,6 +5095,7 @@ class VirtualGrid(QWidget):
         key = resolve_lineage(meta.get("model", ""), meta.get("raw", ""), meta.get("loras"))
         text, bg = LINEAGE_BADGES.get(key, ("", None))
         cell.set_lineage_badge(text, bg)
+        cell.set_safety_badge(image_safety(cell.path, meta))
 
     def _refresh_cell_badges(self):
         for cell in self._visible_cells.values():
@@ -4518,7 +5227,6 @@ class VirtualGrid(QWidget):
             else:
                 self._multi_sel.clear()
                 self._selected = path; self._last_idx = new_idx
-                self._multi_sel.add(path)
                 self._refresh_cell_colors()
                 self.sel_changed.emit(self._multi_sel)
                 self.image_clicked.emit(path)
@@ -4551,15 +5259,15 @@ class VirtualGrid(QWidget):
             # Ctrl+クリック開始時: 既存の _selected を _multi_sel に追加してから toggle
             if self._selected and not self._multi_sel:
                 self._multi_sel.add(self._selected)
-            self.toggle_multi(path)
             self._selected = path; self._last_idx = idx
+            self.toggle_multi(path)
             self.multi_clicked.emit(path)
         elif shift:
             # Shift+クリック: _selected も _multi_sel に含める
             if self._selected:
                 self._multi_sel.add(self._selected)
-            self.range_select(path)
             self._selected = path
+            self.range_select(path)
             self.multi_clicked.emit(path)
         else:
             if self._selected == path and (not self._multi_sel or self._multi_sel == {path}):
@@ -4572,7 +5280,6 @@ class VirtualGrid(QWidget):
                 return
             self._multi_sel.clear()
             self._selected = path; self._last_idx = idx
-            self._multi_sel.add(path)
             self._refresh_cell_colors()
             self.sel_changed.emit(self._multi_sel)
             self.image_clicked.emit(path)
@@ -4665,97 +5372,259 @@ class VirtualGrid(QWidget):
             self.setFocus()
 
 
-class _ThumbCell(QFrame):
+class _ThumbCell(QWidget):
     """仮想グリッド内のサムネイルセル（VirtualGrid 専用）"""
     clicked        = Signal(str, Qt.KeyboardModifier)
     double_clicked = Signal(str)
     right_clicked  = Signal(str, QPoint)
+    repaintFinished = Signal()
 
     def __init__(self, path: str, size: int, parent=None):
         super().__init__(parent)
         self.path = path; self._size = size
-        self._sel_state = None   # v2.06 P3: (selected, multi) の前回値
-        # [v2.38.10] QSS は各セル・クリック毎のスタイル再計算(実機合成負荷)ではなく
-        # paintEvent による自前描画(背景+枠線)・name label は setPalette で切り替える。
-        self._f_bg = PAL["bg3"]
-        self._f_bd = PAL["bg3"]
-        self._name_color = PAL["fg2"]
+        self._dpr = max(1.0, self.devicePixelRatioF())
+        self._sel_state = None
+        self._name = os.path.basename(path)
+        self._px = QPixmap()
+        self._badge_text = ""
+        self._badge_bg = ""
         self.setFixedSize(size + 6, size + 26)
+        name_font = self.font()
+        name_font.setPointSize(8)
+        self._name_font = name_font
+        name_metrics = QFontMetrics(name_font)
+        self._name_text = name_metrics.elidedText(
+            self._name, Qt.TextElideMode.ElideMiddle, max(1, size + 2))
+        self._name_px_normal = QPixmap()
+        self._name_px_selected = QPixmap()
+        self._rebuild_name_cache()
+        self._badge_font = QFont(name_font)
+        self._badge_font.setPointSize(8)
+        self._badge_font.setBold(True)
+        self._badge_px = QPixmap()
+        self._safety = ""
+        self._safety_px = QPixmap()
+        self._safety_size = QSize(38, 16)
+        self._render_px_normal = QPixmap()
+        self._render_px_selected = QPixmap()
+        self._render_px_multi = QPixmap()
+        self._rebuild_render_cache()
+        self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
-        self._img_lbl = QLabel(self)
-        self._img_lbl.setFixedSize(size, size)
-        self._img_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._img_lbl.setStyleSheet("background:transparent;border:none;")
-        self._img_lbl.move(3, 3)
+    def _rebuild_name_cache(self):
+        for attr, color in (("_name_px_normal", PAL["fg2"]),
+                            ("_name_px_selected", "#ffffff")):
+            name_px = QPixmap(_thumb_pixel_size(self.width(), self._dpr),
+                              _thumb_pixel_size(20, self._dpr))
+            name_px.setDevicePixelRatio(self._dpr)
+            name_px.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(name_px)
+            painter.setFont(self._name_font)
+            painter.setPen(QColor(color))
+            painter.drawText(QRect(0, 0, self.width(), 20),
+                             Qt.AlignmentFlag.AlignCenter, self._name_text)
+            painter.end()
+            setattr(self, attr, name_px)
 
-        name = os.path.basename(path)
-        self._name_lbl = QLabel(name, self)
-        self._name_lbl.setFixedSize(size + 6, 20)
-        self._name_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._name_lbl.setStyleSheet("font-size:8pt;background:transparent;border:none;")
-        self._name_lbl.move(0, size + 4)
+    def _refresh_for_dpr(self, pixel_ratio: float):
+        pixel_ratio = max(1.0, float(pixel_ratio))
+        if abs(pixel_ratio - self._dpr) < 0.0001:
+            return
+        old_dpr = self._dpr
+        self._dpr = pixel_ratio
+        if not self._px.isNull():
+            logical_w = max(1, int(round(self._px.width() / old_dpr)))
+            logical_h = max(1, int(round(self._px.height() / old_dpr)))
+            px = self._px.scaled(
+                _thumb_pixel_size(logical_w, pixel_ratio),
+                _thumb_pixel_size(logical_h, pixel_ratio),
+                Qt.AspectRatioMode.IgnoreAspectRatio,
+                Qt.TransformationMode.SmoothTransformation)
+            px.setDevicePixelRatio(pixel_ratio)
+            self._px = px
+        self._rebuild_name_cache()
+        self._refresh_lineage_badge()
+        self._refresh_safety_badge()
+        self._rebuild_render_cache()
+        self.update()
 
-        # 系統バッジ（画像の左上に重ねて表示）
-        self._badge_lbl = QLabel(self)
-        self._badge_lbl.setFixedSize(24, 16)
-        self._badge_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._badge_lbl.hide()
-        self._badge_w = 0   # 表示中のバッジ幅（0=無し）
+    def changeEvent(self, e):
+        super().changeEvent(e)
+        if e.type() == QEvent.Type.DevicePixelRatioChange:
+            self._refresh_for_dpr(self.devicePixelRatioF())
+
+    def _rebuild_render_cache(self):
+        for attr, bg, border, name_px in (
+                ("_render_px_normal", PAL["bg3"], PAL["bg3"], self._name_px_normal),
+                ("_render_px_selected", PAL["sel_dim"], PAL["accent"], self._name_px_selected),
+                ("_render_px_multi", PAL["sel"], PAL["sel"], self._name_px_selected)):
+            render_px = QPixmap(_thumb_pixel_size(self.width(), self._dpr),
+                                _thumb_pixel_size(self.height(), self._dpr))
+            render_px.setDevicePixelRatio(self._dpr)
+            render_px.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(render_px)
+            painter.fillRect(self.rect(), QColor(bg))
+            if not self._px.isNull():
+                px = self._px
+                logical_w = px.width() / self._dpr
+                logical_h = px.height() / self._dpr
+                painter.drawPixmap(
+                    3 + (self._size - logical_w) / 2,
+                    3 + (self._size - logical_h) / 2,
+                    px)
+            if not self._badge_px.isNull():
+                painter.drawPixmap(5, 5, self._badge_px)
+            if not self._safety_px.isNull():
+                painter.drawPixmap(self._safety_rect().topLeft(), self._safety_px)
+            painter.drawPixmap(0, self._size + 4, name_px)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            painter.setPen(QPen(QColor(border), 2, Qt.PenStyle.SolidLine))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRoundedRect(self.rect(), 4, 4)
+            painter.end()
+            setattr(self, attr, render_px)
 
     def set_lineage_badge(self, text: str, bg: str | None):
         """系統バッジを設定する。text が空ならバッジを消す。"""
-        if not text or not bg:
-            self._badge_lbl.hide()
+        text = text or ""
+        bg = bg or ""
+        if text == self._badge_text and bg == self._badge_bg:
             return
-        self._badge_lbl.setText(text)
-        self._badge_lbl.setStyleSheet(
-            f"QLabel{{background:{bg};color:#fff;border-radius:3px;"
-            f"font-size:7pt;font-weight:bold;padding:0 1px;}}")
-        # 画像（左上 3,3 / サイズ self._size）の左上に重ねる
-        self._badge_lbl.move(5, 5)
-        self._badge_lbl.show()
-        self._badge_w = 0  # ファイル名ラベル幅はバッジに影響されない
-
-    def set_pixmap(self, px: QPixmap):
-        # v2.06 P3: ボックスにぴったり収まっている場合は再スケールしない
-        # （_compose_overlay/load が KeepAspectRatio で縮めた直後の二重スケールを省く。
-        #   元画像がセルより小さい場合は従来どおり拡大表示する）
-        if max(px.width(), px.height()) == self._size:
-            self._img_lbl.setPixmap(px)
-            return
-        self._img_lbl.setPixmap(px.scaled(
-            self._size, self._size,
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation))
-
-    def set_selected(self, selected: bool, multi: bool = False):
-        # [v2.38.10] QSS を使わずパレットに色を設定する(QSS 再計算コストを除去)
-        state = (bool(selected), bool(multi))
-        if state == self._sel_state:
-            return  # v2.06 P3: 状態が変わった時だけ更新(スクロール毎の再計算削減)
-        self._sel_state = state
-        if multi:
-            self._f_bg = PAL["sel"]; self._f_bd = PAL["sel"]; self._name_color = "#fff"
-        elif selected:
-            self._f_bg = PAL["sel_dim"]; self._f_bd = PAL["accent"]; self._name_color = "#fff"
-        else:
-            self._f_bg = PAL["bg3"]; self._f_bd = PAL["bg3"]; self._name_color = PAL["fg2"]
-        pal = self._name_lbl.palette()
-        pal.setColor(QPalette.ColorRole.WindowText, QColor(self._name_color))
-        pal.setColor(QPalette.ColorRole.Text, QColor(self._name_color))
-        self._name_lbl.setPalette(pal)
+        self._badge_text = text
+        self._badge_bg = bg
+        self._refresh_lineage_badge()
+        self._rebuild_render_cache()
         self.update()
 
+    def _refresh_lineage_badge(self):
+        if self._badge_text and self._badge_bg:
+            badge_px = QPixmap(_thumb_pixel_size(24, self._dpr),
+                               _thumb_pixel_size(16, self._dpr))
+            badge_px.setDevicePixelRatio(self._dpr)
+            badge_px.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(badge_px)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(self._badge_bg))
+            painter.drawRoundedRect(QRect(0, 0, 24, 16), 3, 3)
+            painter.setFont(self._badge_font)
+            painter.setPen(QColor("#ffffff"))
+            painter.drawText(QRect(0, 0, 24, 16), Qt.AlignmentFlag.AlignCenter, self._badge_text)
+            painter.end()
+            self._badge_px = badge_px
+        else:
+            self._badge_px = QPixmap()
+
+    def set_safety_badge(self, value: str):
+        value = value if value in ("sfw", "nsfw", "unknown") else "unknown"
+        if value == self._safety:
+            return
+        self._safety = value
+        self._refresh_safety_badge()
+        self._rebuild_render_cache()
+        self.update()
+
+    def _refresh_safety_badge(self):
+        if not self._safety:
+            self._safety_px = QPixmap()
+            return
+        text, bg = {
+            "sfw": ("SFW", "#207a4a"),
+            "nsfw": ("NSFW", "#a8324a"),
+            "unknown": (T("未分類"), "#5b6470"),
+        }[self._safety]
+        max_width = max(1, self.width() - 6)
+        badge_font = QFont(self._badge_font)
+        metrics = QFontMetrics(badge_font)
+        text_width = max(1, max_width - 8)
+        while metrics.horizontalAdvance(text) > text_width and badge_font.pointSize() > 5:
+            badge_font.setPointSize(badge_font.pointSize() - 1)
+            metrics = QFontMetrics(badge_font)
+        display_text = metrics.elidedText(
+            text, Qt.TextElideMode.ElideRight, text_width)
+        width = min(max_width, max(38, metrics.horizontalAdvance(display_text) + 8))
+        self._safety_size = QSize(width, 16)
+        badge_px = QPixmap(_thumb_pixel_size(width, self._dpr),
+                           _thumb_pixel_size(16, self._dpr))
+        badge_px.setDevicePixelRatio(self._dpr)
+        badge_px.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(badge_px)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(bg))
+        painter.drawRoundedRect(QRect(0, 0, width, 16), 3, 3)
+        painter.setFont(badge_font)
+        painter.setPen(QColor("#ffffff"))
+        painter.drawText(QRect(0, 0, width, 16), Qt.AlignmentFlag.AlignCenter, display_text)
+        painter.end()
+        self._safety_px = badge_px
+
+    def _safety_rect(self) -> QRect:
+        if self._safety_px.isNull():
+            return QRect()
+        width, height = self._safety_size.width(), self._safety_size.height()
+        x = max(3, self.width() - width - 5)
+        y = 5
+        if not self._badge_px.isNull():
+            lineage_w = self._badge_px.width() / self._dpr
+            if x < 5 + lineage_w + 3:
+                y = 23
+        return QRect(x, y, width, height)
+
+    def set_pixmap(self, px: QPixmap):
+        if px.isNull():
+            self._px = QPixmap()
+        else:
+            if abs(px.devicePixelRatioF() - self._dpr) > 0.0001:
+                px = px.copy()
+                px.setDevicePixelRatio(self._dpr)
+            pixel_size = _thumb_pixel_size(self._size, self._dpr)
+            if max(px.width(), px.height()) == pixel_size:
+                self._px = px
+            else:
+                self._px = px.scaled(
+                    pixel_size, pixel_size,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation)
+                self._px.setDevicePixelRatio(self._dpr)
+        self._rebuild_render_cache()
+        self.update()
+
+    def pixmap(self) -> QPixmap:
+        return self._px
+
+    def set_selected(self, selected: bool, multi: bool = False):
+        state = (bool(selected), bool(multi))
+        if state == self._sel_state:
+            return
+        self._sel_state = state
+        if not self.isVisible():
+            self.update()
+            return
+        outer = QRegion(self.rect())
+        inner = QRegion(self.rect().adjusted(3, 3, -3, -3))
+        region = (outer - inner).united(
+            QRect(0, self._size + 2, self.width(), 24))
+        if not self._safety_px.isNull():
+            region = region.united(self._safety_rect())
+        pixel_size = _thumb_pixel_size(self._size, self._dpr)
+        if not self._px.isNull() and (
+                self._px.hasAlphaChannel()
+                or self._px.width() != pixel_size
+                or self._px.height() != pixel_size):
+            region = region.united(QRect(3, 3, self._size, self._size))
+        self.repaint(region)
+
     def paintEvent(self, _e):
-        """選択枠を自前で描画(setStyleSheet ではなく paintEvent を使う高速化)。"""
         p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        r = self.rect()
-        p.setPen(QPen(QColor(self._f_bd), 2, Qt.PenStyle.SolidLine))
-        p.setBrush(QBrush(QColor(self._f_bg)))
-        p.drawRoundedRect(r, 4, 4)
+        if self._sel_state and self._sel_state[1]:
+            render_px = self._render_px_multi
+        elif self._sel_state and self._sel_state[0]:
+            render_px = self._render_px_selected
+        else:
+            render_px = self._render_px_normal
+        p.drawPixmap(0, 0, render_px)
         p.end()
+        self.repaintFinished.emit()
 
     def mousePressEvent(self, e):
         if e.button() == Qt.MouseButton.LeftButton:
@@ -4797,7 +5666,7 @@ class _ThumbCell(QFrame):
         drag.setMimeData(mime)
 
         # サムネイルをドラッグアイコンに設定
-        px = self._img_lbl.pixmap()
+        px = self.pixmap()
         if px and not px.isNull():
             icon_px = px.scaled(64, 64,
                 Qt.AspectRatioMode.KeepAspectRatio,
@@ -4972,10 +5841,14 @@ class FullViewer(QDialog):
     """全画面画像ビューア"""
     _HIDE_DELAY = 2500
     _BUSY_DELAY = 300      # ms. 超えて待たされた時だけ「読み込み中...」を出す
+    _REACTIVE_INTERVAL = 33
+    _REACTIVE_OUTLINE_CAP = 1280
+    _REACTIVE_RIPPLE_CAP = 5
+    _REACTIVE_PARTICLE_CAP = 20
 
     def __init__(self, parent, path: str, paths: list,
                  loop_mode: str = "loop", slideshow: bool = False,
-                 start_maximized: bool = False):
+                 start_maximized: bool = False, fit_mode: str = "fit"):
         self._restoring_maximized = False
         self._fullscreen_placement = None
         super().__init__(parent)
@@ -4986,16 +5859,21 @@ class FullViewer(QDialog):
         self._idx = self._paths.index(path) if path in self._paths else 0
         self._zoom = 1.0; self._rot = 0
         self._loop_mode = loop_mode
-        self._fit_mode = "fit"       # "fit" or "actual"
+        self._fit_mode = "actual" if fit_mode == "actual" else "fit"
+        self._fit_mode_pref = self._fit_mode
         self._immersive = False
         self._at_end = False
         self._ss_job: QTimer | None = None
+        self._hmv_paused = False
+        self._hmv_source_paths = list(paths)
         self._hide_timer = QTimer(self)
         self._hide_timer.setSingleShot(True)
         self._hide_timer.timeout.connect(self._hide_ui)
         self._start_maximized = start_maximized  # 起動時に最大化するか
         self._pix_loader: _PixmapLoader | None = None  # 非同期デコードローダー
         self._fit_loader: _PixmapLoader | None = None  # [v2.38.10] fit版ローダー(即時表示用)
+        self._image_load_seq = 0
+        self._retired_image_loaders: list[_PixmapLoader] = []
 
         # 開いた時のウィンドウ状態を記録（全画面解除時に戻す）
         self._pre_fullscreen_maximized = False  # 全画面前が最大化だったか
@@ -5015,9 +5893,12 @@ class FullViewer(QDialog):
         self._voice_output = None
         self._bgm_queue: list[str] = []
         self._voice_queue: list[str] = []
+        self._bgm_folder = ""
+        self._voice_folder = ""
         self._bgm_idx: int = 0
         self._bgm_playing_path: str | None = None  # 連打時の setSource 多重起動(クラッシュ)防止
         self._voice_idx: int = 0
+        self._voice_playing_path: str | None = None
         self._voice_boost_cache: dict = {}  # [v2.38.2] voice 100%超 temp 増幅のキャッシュ
         self._music_on: bool = False
         self._audio_ready: bool = False
@@ -5038,10 +5919,33 @@ class FullViewer(QDialog):
         self._open_t0 = None      # [v2.38.7] 一時的計装: ダブルクリックからの起点
         self._shown_logged = False
         self._cur_path = None  # [v2.35.2] 表示中の画像パス（同じ画像の再表示では遷移しない）
+        self._placeholder_path = None
         self._slide_dir = 1  # [v2.35.3] スライド方向: 1=次へ / -1=前へ（左右上下で反転）
         self._anim_timer = QTimer(self)
         self._anim_timer.setInterval(16)
         self._anim_timer.timeout.connect(self._anim_step)
+        self._reactive_timer = QTimer(self)
+        self._reactive_timer.setInterval(self._REACTIVE_INTERVAL)
+        self._reactive_timer.timeout.connect(self._reactive_step)
+        self._reactive_features = None
+        self._reactive_feature_rate = 22050.0 / 512.0
+        self._reactive_smoothed = [0.0] * 5
+        self._reactive_kick = 0.0
+        self._reactive_last_pos = None
+        self._reactive_last_beat_index = -1
+        self._reactive_last_onset = 0.0
+        self._reactive_media_position = None
+        self._reactive_view_scale = 1.0
+        self._reactive_base_view_scale = 1.0
+        self._reactive_applied_scale = None
+        self._reactive_outline_item = None
+        self._reactive_outline_key = None
+        self._reactive_outline_base = (1.0, 1.0)
+        self._reactive_flash_item = None
+        self._reactive_ripples = []
+        self._reactive_ripple_pool = []
+        self._reactive_particles = []
+        self._reactive_particle_pool = []
         self._init_audio_state()
 
         self._build_ui()
@@ -5065,11 +5969,14 @@ class FullViewer(QDialog):
         self._toolbar = QWidget()
         self._toolbar.setStyleSheet("background: #111; border-bottom: 1px solid #333;")
         self._toolbar.setFixedHeight(38)
-        tb = QHBoxLayout(self._toolbar); tb.setContentsMargins(8,3,8,3); tb.setSpacing(4)
+        tb = QHBoxLayout(self._toolbar)
+        tb.setContentsMargins(8, 4, 8, 4)
+        tb.setSpacing(4)
 
         self._info_lbl = QLabel("")
         self._info_lbl.setStyleSheet(f"color: {PAL['fg2']}; font-size: 8pt;")
-        tb.addWidget(self._info_lbl, 1)
+        self._info_lbl.setMinimumWidth(60)
+        self._info_lbl.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
 
         def tbtn(text, tip=""):
             b = QPushButton(text); b.setFixedHeight(28)
@@ -5078,11 +5985,16 @@ class FullViewer(QDialog):
             b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             b.setStyleSheet(
                 f"QPushButton{{background:#1e1e1e;color:{PAL['fg1']};border:1px solid #333;"
-                f"border-radius:4px;padding:0 8px;}}"
-                f"QPushButton:hover{{background:#333;border-color:{PAL['accent']}}}")
+                f"border-radius:4px;padding:0 6px;}}"
+                f"QPushButton:hover{{background:#333;border-color:{PAL['accent']}}}"
+                f"QPushButton:checked{{background:{PAL['accent']};color:#ffffff;"
+                f"border-color:{PAL['accent']};}}")
+            b.ensurePolished()
+            b.setMinimumWidth(b.sizeHint().width() + 4)
             return b
 
-        self._ss_spin = QSpinBox(); self._ss_spin.setRange(1,1800); self._ss_spin.setValue(180)
+        self._ss_spin = QSpinBox(); self._ss_spin.setRange(1,1800)
+        self._ss_spin.setValue(int(self._audio_cfg("ss_interval_frames", 180)))
         self._ss_spin.setToolTip(T("送り間隔 (フレーム, 60fps 基準) / 1F≈16.67ms / 60F=1秒 / 180F=3秒"))
         # 幅48px だと up/down ボタンと数字が重なる（実環境で「3」が矢印の下に沈む）
         # → ボタン幅 16px + 数字側 padding を確保し、sub-control を明示配置する
@@ -5103,38 +6015,43 @@ class FullViewer(QDialog):
             f"width:16px;height:13px;border-left:1px solid #333;background:#262626;"
             f"border-bottom-right-radius:3px;}}"
             f"QSpinBox::up-button:hover,QSpinBox::down-button:hover{{background:#333;}}")
-        self._ss_btn = tbtn("▶ SS", T("スライドショー (S)")); self._ss_btn.clicked.connect(self._toggle_ss)
-        self._music_btn = tbtn("🎵", T("スライドショー音楽 ON"))
+        self._ss_btn = tbtn("▶ スライド", T("スライド 再生 / 一時停止 (S)")); self._ss_btn.clicked.connect(self._toggle_ss)
+        self._ss_stop_btn = tbtn("⏹", T("スライド 停止（先頭へ戻る）")); self._ss_stop_btn.clicked.connect(self._stop_ss)
+        self._ss_stop_btn.setEnabled(False)
+        self._music_btn = tbtn("🎵 " + T("スライド音楽 OFF"), T("スライド音楽 ON"))
+        self._music_btn.setCheckable(True)
+        self._music_btn.setChecked(False)
         self._music_btn.clicked.connect(self._toggle_music)
         if not HAS_MULTIMEDIA:
             self._music_btn.setEnabled(False)
             self._music_btn.setToolTip(T("PySide6.QtMultimedia が無効"))
-        self._fs_btn = tbtn(T("⛶ 全画面"), T("没入モード (Space/F11)"))
+        else:
+            self._update_music_button()
+        self._fs_btn = tbtn(T("全画面"), T("没入モード (Space/F11)"))
         self._fs_btn.clicked.connect(self._toggle_immersive)
-        self._fit_btn = tbtn(T("⊞ 実寸"), T("実寸/fitモード切替"))
+        self._fit_btn = tbtn(T("原寸") if self._fit_mode == "actual" else T("fit"),
+                             T("実寸/fitモード切替"))
         self._fit_btn.clicked.connect(self._toggle_actual_size)
         rot_btn  = tbtn("↺", T("回転 (R)"));  rot_btn.clicked.connect(self._rotate)
         zin_btn  = tbtn("🔍+", T("拡大 (+)")); zin_btn.clicked.connect(self._zoom_in)
         zout_btn = tbtn("🔍−", T("縮小 (-)")); zout_btn.clicked.connect(self._zoom_out)
-        z1_btn   = tbtn("1:1", T("等倍 (0)")); z1_btn.clicked.connect(self._zoom_reset)
+        self._z1_btn = tbtn("100%", T("等倍 (0)")); self._z1_btn.clicked.connect(self._zoom_reset)
         # [v2.32] 音量・速度調整ポップアップ + 環境設定ボタン
-        self._vol_btn = tbtn("🔊", T("音量・速度調整")); self._vol_btn.clicked.connect(self._open_volume_popup)
+        self._vol_btn = tbtn("🔊", T("スライドの音量・速度・タグ")); self._vol_btn.clicked.connect(self._open_volume_popup)
         if not HAS_MULTIMEDIA:
             self._vol_btn.setEnabled(False)
             self._vol_btn.setToolTip(T("PySide6.QtMultimedia が無効"))
-        self._cfg_btn = tbtn("⚙", T("環境設定（音楽タブへ）")); self._cfg_btn.clicked.connect(self._open_settings_from_viewer)
-        close_btn= tbtn("✕", T("閉じる (Esc/Enter)")); close_btn.clicked.connect(self.close)
-        close_btn.setStyleSheet(
-            f"QPushButton{{background:#1e1e1e;color:{PAL['red']};border:1px solid #333;border-radius:4px;padding:0 8px;}}"
-            f"QPushButton:hover{{background:{PAL['red']};color:#fff;}}")
+        self._cfg_btn = tbtn("⚙", T("環境設定（HMVタブへ）")); self._cfg_btn.clicked.connect(self._open_settings_from_viewer)
 
-        for w in [self._ss_btn, QLabel(T("F")), self._ss_spin, self._music_btn, self._fs_btn,
-                  self._fit_btn, rot_btn, zin_btn, zout_btn, z1_btn,
-                  self._vol_btn, self._cfg_btn, close_btn]:
-            if isinstance(w, QLabel):
-                w.setStyleSheet(f"color:{PAL['fg2']};")
-            tb.addWidget(w)
-
+        frames_lbl = QLabel(T("フレーム"))
+        frames_lbl.setStyleSheet(f"color:{PAL['fg2']};")
+        for widget in (self._ss_btn, self._music_btn, self._ss_stop_btn, self._vol_btn,
+                       frames_lbl, self._ss_spin):
+            tb.addWidget(widget)
+        tb.addWidget(self._info_lbl, 1)
+        for widget in (self._fs_btn, self._fit_btn, rot_btn, zin_btn, zout_btn, self._z1_btn,
+                       self._cfg_btn):
+            tb.addWidget(widget)
         root.addWidget(self._toolbar)
 
         # ── 画像エリア (QGraphicsView)
@@ -5203,8 +6120,20 @@ class FullViewer(QDialog):
     # ── ウィンドウ初期化（画像サイズに合わせる） ─────────────────────────
     def _init_window(self):
         """起動後に画像サイズに合わせてウィンドウをリサイズし、画像を表示する。"""
+        audio_cfg = getattr(self, "_audio_cfg", None)
+        tag_filter = (audio_cfg is not None and audio_cfg("hmv_tag_filter", False)
+                      and self._hmv_selected_tags())
+        safety_filter = (audio_cfg is not None
+                         and audio_cfg("hmv_safety_mode", "all") != "all")
+        if (tag_filter or safety_filter) and self._hmv_filter_pending():
+            self._show_hmv_waiting()
+        elif (tag_filter or safety_filter) and self._hmv_metadata_ready():
+            if not self._apply_hmv_playlist(show_image=False):
+                self._fallback_hmv_filters(show_image=False)
         if not self._paths:
             return
+        self._toolbar.layout().activate()
+        self.layout().activate()
         path = self._paths[self._idx]
         dimensions = QImageReader(path).size()
         iw, ih = dimensions.width(), dimensions.height()
@@ -5216,22 +6145,20 @@ class FullViewer(QDialog):
                 self._show_image()
                 return
 
-        # 前回最大化で閉じていた場合はそのまま最大化表示（fit固定）
+        # 前回最大化で閉じていた場合はそのまま最大化表示
         if self._start_maximized:
-            self._fit_mode = "fit"
-            self._fit_btn.setText("⊞ fit")
             # [v2.32.2] タイトルバーのドラッグで最大化を解除すると、
             # 事前の正常ジオメトリが未登録だと最小高さまで潰れる。
             # showMaximized() 前に画像アスペクト+画面比で妥当な復元サイズを
             # resize() しておくと、OS がそこへ戻してくれる。
             screen0 = self.screen() or QApplication.primaryScreen()
             sg0 = screen0.availableGeometry()
-            chrome_h0 = 38 + 32 + 40
+            chrome_h0 = 68 + 32 + 40
             max_w0 = int(sg0.width() * 0.75)
             max_h0 = int(sg0.height() * 0.75) - chrome_h0
             if iw > 0 and ih > 0:
                 scale0 = min(max_w0 / iw, max_h0 / ih, 1.0)
-                rw = max(640, int(iw * scale0))
+                rw = max(640, int(iw * scale0), self.minimumSizeHint().width())
                 rh = max(480, int(ih * scale0) + chrome_h0)
             else:
                 rw, rh = max(640, int(sg0.width() * 0.6)), max(480, int(sg0.height() * 0.6))
@@ -5249,13 +6176,13 @@ class FullViewer(QDialog):
         sg = screen.availableGeometry()
         sw, sh = sg.width(), sg.height()
         # ツールバー＋シークバー分の高さ余白
-        chrome_h = 38 + 32 + 40   # toolbar + seekbar + タイトルバー
+        chrome_h = 68 + 32 + 40   # toolbar + seekbar + タイトルバー
 
         # 画像がスクリーンより大きければ収まるサイズにスケール
         max_w = int(sw * 0.9)
         max_h = int(sh * 0.9)
         scale = min(max_w / iw, (max_h - chrome_h) / ih, 1.0)
-        win_w = max(400, int(iw * scale))
+        win_w = max(400, int(iw * scale), self.minimumSizeHint().width())
         win_h = max(300, int(ih * scale) + chrome_h)
 
         # ウィンドウを画像サイズに合わせて中央配置
@@ -5263,9 +6190,6 @@ class FullViewer(QDialog):
         y = sg.y() + (sh - win_h) // 2
         self.setGeometry(x, y, win_w, win_h)
         self._normal_size = (x, y, win_w, win_h)
-        # 通常ウィンドウはウィンドウ自体が画像サイズに合わせてあるので原寸表示
-        self._fit_mode = "actual"
-        self._fit_btn.setText(T("⊟ 原寸"))
         self.show()
         self.setFocus()
         # show() 後に _show_image（ビューポートサイズ確定済み）
@@ -5295,7 +6219,7 @@ class FullViewer(QDialog):
             self._immersive_prev_mode = self._fit_mode
             if self._fit_mode == "actual":
                 self._fit_mode = "fit"
-                self._fit_btn.setText("⊞ fit")
+                self._fit_btn.setText(T("fit"))
             self.showFullScreen()       # OS装飾なし真全画面
             self._hide_ui()
             self._fs_btn.setText(T("⊠ 戻す"))
@@ -5320,13 +6244,12 @@ class FullViewer(QDialog):
                 self.setGeometry(x, y, w, h)
             else:
                 self.showNormal()
-            # [v2.17] 突入前の原寸表示へ戻す。ただし没入中にユーザーが
-            # ⊞/⊟ を押して変更していたら（current != fit）その選択を尊重する。
-            if self._immersive_prev_mode == "actual" and self._fit_mode == "fit":
-                self._fit_mode = "actual"
-                self._fit_btn.setText(T("⊟ 原寸"))
+            # 没入中の一時的な fit 変更だけを戻し、ユーザーの切り替えは保持する。
+            if self._fit_mode != self._fit_mode_pref:
+                self._fit_mode = self._fit_mode_pref
+                self._fit_btn.setText(T("原寸") if self._fit_mode == "actual" else T("fit"))
             self._immersive_prev_mode = None
-            self._fs_btn.setText(T("⛶ 全画面"))
+            self._fs_btn.setText(T("全画面"))
             self._hide_timer.stop()
             QTimer.singleShot(30, self._apply_view)
 
@@ -5384,6 +6307,9 @@ class FullViewer(QDialog):
         大PNGは Qt でスケールデコード不可のため初回デコードが数百ms かかる
         （実測 169〜793ms）→ 体感待ち時間を短縮する。"""
         try:
+            if (self._anim_enabled() and not self._pix_item.pixmap().isNull()
+                    and self._cur_path and self._cur_path != path):
+                return
             if self._fit_mode == "actual" and self._zoom != 1.0:
                 return  # ズーム中はプレビュー拡大が粗すぎるので差し替えない
             mw = self.parent()
@@ -5394,48 +6320,70 @@ class FullViewer(QDialog):
             if px is None:
                 ts = getattr(grid, "_thumb_size", 0)
                 if ts:
-                    cached = _mem_get(f"{path}:{ts}")
+                    cached = _mem_get(_thumb_mem_key(
+                        path, ts, grid.devicePixelRatioF()))
                     px = as_pixmap(cached) if cached is not None else None
             if px is None or px.isNull():
                 return
             self._pix_item.setPixmap(px)
-            self._scene.setSceneRect(QRectF(0, 0, px.width(), px.height()))
+            px_ratio = max(1.0, px.devicePixelRatioF())
+            self._scene.setSceneRect(QRectF(
+                0, 0, px.width() / px_ratio, px.height() / px_ratio))
             self._pix_item.setPos(0, 0)
             self._pix_item.setScale(1.0)
             self._cur_path = path  # 同じパス扱い → 本画像到着時に遷移アニメを再生しない
+            self._placeholder_path = path
             self._apply_view()
+            prepare = getattr(self, "_reactive_prepare_image", None)
+            if prepare is not None:
+                prepare(path, px)
         except Exception:
             pass
+
+    def _cancel_image_requests(self):
+        self._image_load_seq += 1
+        for attr in ("_pix_loader", "_fit_loader"):
+            loader = getattr(self, attr, None)
+            if loader is not None:
+                loader.cancel()
+                if loader not in self._retired_image_loaders:
+                    self._retired_image_loaders.append(loader)
+            setattr(self, attr, None)
+        self._busy_timer.stop()
+
+    def _is_current_image_request(self, path: str, request_id: int | None) -> bool:
+        if request_id is not None and request_id != self._image_load_seq:
+            return False
+        return bool(self._paths) and path == self._paths[self._idx]
 
     def _load_pixmap_async(self, path: str):
         """非同期でPixmapをデコードし、完了後に _on_pixmap_loaded を呼ぶ。
         キャッシュにあれば即シグナルを発火。読み込み中はインジケータを表示。"""
-        # 既存ローダーをキャンセル
-        if hasattr(self, "_pix_loader") and self._pix_loader is not None:
-            self._pix_loader.cancel()
-            self._pix_loader = None
-        if hasattr(self, "_fit_loader") and self._fit_loader is not None:
-            self._fit_loader.cancel()
-            self._fit_loader = None
-        self._busy_timer.stop()          # 前回の待機表示予定を取り消す
+        self._cancel_image_requests()
+        request_id = self._image_load_seq
         self._overlay_item.hide()
+        self._placeholder_path = None
 
         cache_key = f"__fv__{path}:{self._rot}"
         # [v2.05 FIX] T1+D6: ロック付きキャッシュ参照
         cached = _mem_get(cache_key)
         if isinstance(cached, QImage):
-            self._on_pixmap_loaded(path, cached)
+            self._on_pixmap_loaded(path, cached, request_id)
             return
         if isinstance(cached, QPixmap):
-            self._on_pixmap_loaded(path, cached.toImage())
+            self._on_pixmap_loaded(path, cached.toImage(), request_id)
             return
 
         # [v2.17] 隣で先読みしていたローダーがあればそのまま引き取る（二重デコード回避）。
         # 回転値が違うローダーを引き取ると別画像が出るため、rot の一致も条件にする。
         pf = self._prefetch.pop(path, None)
         if pf is not None and pf.isRunning() and pf._rot == self._rot:
-            pf.loaded.connect(self._on_pixmap_loaded)
-            pf.failed.connect(self._on_pixmap_failed)
+            pf.loaded.connect(
+                lambda _path, _qi, _request=request_id:
+                self._on_pixmap_loaded(_path, _qi, _request))
+            pf.failed.connect(
+                lambda _path, _error, _request=request_id:
+                self._on_pixmap_failed(_path, _error, _request))
             self._pix_loader = pf
             self._busy_timer.start(self._BUSY_DELAY)
             return
@@ -5452,15 +6400,27 @@ class FullViewer(QDialog):
 
         # [v2.38.10] フル到着より先に即座に表示する 2段階デコード:
         # fit 版ローダーで viewport 向け画像を即時表示 → フル版到着時は静かな差し替え。
-        fit_loader = _PixmapLoader(path, self._rot, self, fit_size=self._fit_display_size())
-        fit_loader.loaded.connect(self._on_fit_loaded)
-        fit_loader.failed.connect(self._on_fit_failed)
-        self._fit_loader = fit_loader
-        fit_loader.start()
+        # 切替アニメ中は fit 版が _cur_path を先に更新して本番の遷移を奪うため使わない。
+        animate = (self._anim_enabled() and not self._pix_item.pixmap().isNull()
+                   and self._cur_path and self._cur_path != path)
+        if not animate:
+            fit_loader = _PixmapLoader(path, self._rot, self, fit_size=self._fit_display_size())
+            fit_loader.loaded.connect(
+                lambda _path, _qi, _request=request_id:
+                self._on_fit_loaded(_path, _qi, _request))
+            fit_loader.failed.connect(
+                lambda _path, _error, _request=request_id:
+                self._on_fit_failed(_path, _error, _request))
+            self._fit_loader = fit_loader
+            fit_loader.start()
 
         loader = _PixmapLoader(path, self._rot, self)
-        loader.loaded.connect(self._on_pixmap_loaded)
-        loader.failed.connect(self._on_pixmap_failed)
+        loader.loaded.connect(
+            lambda _path, _qi, _request=request_id:
+            self._on_pixmap_loaded(_path, _qi, _request))
+        loader.failed.connect(
+            lambda _path, _error, _request=request_id:
+            self._on_pixmap_failed(_path, _error, _request))
         self._pix_loader = loader
         loader.start()
 
@@ -5476,6 +6436,8 @@ class FullViewer(QDialog):
         for p in [p for p in self._prefetch if p not in keep]:
             ldr = self._prefetch.pop(p)
             ldr.cancel()
+            if ldr not in self._retired_image_loaders:
+                self._retired_image_loaders.append(ldr)
         for off in (1, -1):
             j = self._idx + off
             if j < 0 or j >= n:
@@ -5498,6 +6460,8 @@ class FullViewer(QDialog):
     def _cancel_prefetch(self):
         for ldr in list(self._prefetch.values()):
             ldr.cancel()
+            if ldr not in self._retired_image_loaders:
+                self._retired_image_loaders.append(ldr)
         self._prefetch.clear()
 
     def _show_busy_overlay(self):
@@ -5516,11 +6480,11 @@ class FullViewer(QDialog):
         self._overlay_item.show()
 
     @Slot(str, QImage)
-    def _on_pixmap_loaded(self, path: str, qi: QImage):
+    def _on_pixmap_loaded(self, path: str, qi: QImage, request_id: int | None = None):
         """非同期デコード完了コールバック。メインスレッドで実行される。
         [v2.05 FIX] T1: QImage → QPixmap 変換を UI スレッドで実施。
         [v2.05.1 OPT] T1-opt: qi.copy() を廃止 (Qt COW が管理)。4K 画像で高速化。"""
-        if not self._paths or path != self._paths[self._idx]:
+        if not self._is_current_image_request(path, request_id):
             return
         self._busy_timer.stop()
         self._pix_loader = None        # 完了したので「待機中」状態を解除（_show_busy_overlay の判定材料）
@@ -5528,7 +6492,10 @@ class FullViewer(QDialog):
         mw = self.parent()
         if hasattr(mw, "_compose_overlay"):
             try:
-                px = mw._compose_overlay(px, path, px.width(), px.height())
+                source_ratio = max(1.0, px.devicePixelRatioF())
+                px = mw._compose_overlay(
+                    px, path, px.width() / source_ratio,
+                    px.height() / source_ratio, source_ratio)
             except Exception:
                 pass
         self._overlay_item.hide()
@@ -5537,11 +6504,12 @@ class FullViewer(QDialog):
         # 実際の送り（パスが変わった）時だけアニメを再生する。
         if (self._anim_enabled() and not old_px.isNull()
                 and self._cur_path is not None and self._cur_path != path):
-            self._start_transition(old_px, px)
+            self._start_transition(old_px, px, path)
         else:
-            self._commit_new(px)
+            self._commit_new(px, path)
         self._cur_path = path
         self._shown_once = True
+        self._placeholder_path = None
         # [v2.38.7] 一時的計装: ダブルクリック→初回画像が実際に描画されるまで
         _t0 = getattr(self, "_open_t0", None)
         if _t0 is not None and not getattr(self, "_shown_logged", False):
@@ -5549,23 +6517,19 @@ class FullViewer(QDialog):
             _mw = self.parent()
             if hasattr(_mw, "_perf"):
                 _mw._perf(" dbl→初回画像表示", (time.perf_counter() - _t0) * 1000)
-        try:
-            st = os.stat(path)
-            mode = T("実寸") if self._fit_mode == "actual" else "fit"
-            self._info_lbl.setText(
-                f"{os.path.basename(path)}  {px.width()}×{px.height()}  "f"{st.st_size//1024}KB  [{self._idx+1}/{len(self._paths)}]  "f"{Te('ズーム:')}{self._zoom*100:.0f}%  {mode}{Te('  ←→ナビ  Space=全画面')}")
-        except Exception:
-            pass
+        self._set_image_info(path, px)
         self._prefetch_neighbors()     # [v2.17] 次は先読み済み＝送り待ちゼロにする
 
     @Slot(str, str)
-    def _on_pixmap_failed(self, path: str, error: str):
+    def _on_pixmap_failed(self, path: str, error: str, request_id: int | None = None):
         """非同期デコード失敗コールバック。"""
-        if not self._paths or path != self._paths[self._idx]:
+        if not self._is_current_image_request(path, request_id):
             return
         self._busy_timer.stop()
         # [v2.05 FIX] D7: scene.clear() を廃止しピクスマップのみクリア
         self._finish_transition()
+        self._placeholder_path = None
+        self._reset_reactive_frame()
         self._pix_item.setPixmap(QPixmap())
         self._overlay_item.setPlainText(f"{Te('読み込めませんでした: ')}{error}")
         br = self._overlay_item.boundingRect()
@@ -5575,36 +6539,46 @@ class FullViewer(QDialog):
                 sr.center().x() - br.width() / 2,
                 sr.center().y() - br.height() / 2)
         self._overlay_item.show()
+        self._set_image_info(path, error=error)
 
     @Slot(str, QImage)
-    def _on_fit_loaded(self, path: str, qi: QImage):
+    def _on_fit_loaded(self, path: str, qi: QImage, request_id: int | None = None):
         """[v2.38.10] fit 版(即時表示)到着。
         フル版が到着しているなら差し替え不要(_on_pixmap_loaded 側で `_commit_new` 済み)。"""
         try:
-            if not self._paths or path != self._paths[self._idx]:
+            if not self._is_current_image_request(path, request_id):
                 return
             if qi is None or qi.isNull():
                 return
-            if self._cur_path == path and self._shown_once:
+            if (self._cur_path == path and self._shown_once
+                    and self._placeholder_path != path):
                 return  # フル版済み → fit 差し替え不要
+            if (self._anim_enabled() and not self._pix_item.pixmap().isNull()
+                    and self._cur_path and self._cur_path != path):
+                return
             px = QPixmap.fromImage(qi)
             mw = self.parent()
             if hasattr(mw, "_compose_overlay"):
                 try:
-                    px = mw._compose_overlay(px, path, px.width(), px.height())
+                    source_ratio = max(1.0, px.devicePixelRatioF())
+                    px = mw._compose_overlay(
+                        px, path, px.width() / source_ratio,
+                        px.height() / source_ratio, source_ratio)
                 except Exception:
                     pass
             self._finish_transition()
-            self._commit_new(px)
+            self._commit_new(px, path)
             self._cur_path = path
             self._shown_once = True
+            self._placeholder_path = None
+            self._set_image_info(path)
         except Exception:
             pass
 
     @Slot(str, str)
-    def _on_fit_failed(self, path: str, error: str):
+    def _on_fit_failed(self, path: str, error: str, request_id: int | None = None):
         """fit 版のみ失敗: フル版は到着すれば表示される(何もしない)。"""
-        if not self._paths or path != self._paths[self._idx]:
+        if not self._is_current_image_request(path, request_id):
             return
 
     def _fit_display_size(self) -> QSize:
@@ -5640,9 +6614,14 @@ class FullViewer(QDialog):
         else:  # "actual"
             scale = 1.0 * self._zoom
 
-        view.resetTransform()
-        view.scale(scale, scale)
-        view.centerOn(self._pix_item)
+        self._reactive_base_view_scale = scale
+        apply_reactive = getattr(self, "_apply_reactive_view", None)
+        if apply_reactive is not None:
+            apply_reactive(recenter=True)
+        else:
+            view.resetTransform()
+            view.scale(scale, scale)
+            view.centerOn(self._pix_item)
 
     # ── スライド切替アニメーション (v2.34) ────────────────────────────────
     def _anim_enabled(self) -> bool:
@@ -5669,18 +6648,18 @@ class FullViewer(QDialog):
             for k in raw:
                 if k in ANIM_KINDS and k not in pool:
                     pool.append(k)
-        return tuple(pool) if pool else tuple(ANIM_DEFAULT_POOL)
+        return tuple(pool)
 
     def _anim_type(self) -> str:
         t = str(self._audio_cfg("ss_anim_type", "fade"))
         pool = self._anim_pool()
         if t == "random":
-            return random.choice(pool)
+            return random.choice(pool) if pool else "fade"
         if t in ANIM_KINDS:
             return t
         return pool[0] if pool else "fade"
 
-    def _commit_new(self, px: QPixmap):
+    def _commit_new(self, px: QPixmap, path: str | None = None):
         """新画像を最終状態（pos 0,0 / scale 1 / fx 非表示）で描画。"""
         self._pix_item.setPixmap(px)
         self._scene.setSceneRect(QRectF(0, 0, px.width(), px.height()))
@@ -5691,6 +6670,10 @@ class FullViewer(QDialog):
         self._hide_fx()
         self._hide_stripe()
         self._apply_view()
+        prepare = getattr(self, "_reactive_prepare_image", None)
+        if prepare is not None:
+            prepare(path or getattr(self, "_cur_path", None), px)
+        self._sync_reactive_timer()
 
     def _hide_fx(self):
         if self._fx_item is not None:
@@ -5718,6 +6701,9 @@ class FullViewer(QDialog):
             self._pix_item.setZValue(0)
         self._hide_fx()
         self._hide_stripe()
+        sync = getattr(self, "_sync_reactive_timer", None)
+        if sync is not None:
+            sync()
 
     def _build_stripe_bands(self, cw: int, ch: int):
         # [v2.35] 縦縞の出現順・しきい値・横ずれ（グリッチ感）を事前計算
@@ -5732,13 +6718,21 @@ class FullViewer(QDialog):
             bands.append((bi * bw, bw, ch, rt, jit))
         return bands
 
-    def _start_transition(self, old_px: QPixmap, new_px: QPixmap):
+    def _start_transition(self, old_px: QPixmap, new_px: QPixmap, path: str | None = None):
         """旧→新の切替アニメを開始。dur<=0 は即時確定のみ。"""
         self._finish_transition()          # 前回の残りを確定
-        self._commit_new(new_px)           # 新画像を最終状態へ
+        stop_reactive = getattr(self, "_stop_reactive", None)
+        if stop_reactive is not None:
+            stop_reactive()
+        self._commit_new(new_px, path)     # 新画像を最終状態へ
+        self._reactive_timer.stop()
+        self._hide_reactive_outline()
         kind = self._anim_type()
         dur = self._anim_ms()
         if dur <= 0:
+            sync = getattr(self, "_sync_reactive_timer", None)
+            if sync is not None:
+                sync()
             return
         w, h = new_px.width(), new_px.height()
         if w <= 0 or h <= 0:
@@ -5877,13 +6871,487 @@ class FullViewer(QDialog):
             self._stripe_item.setPixmap(px)
             self._stripe_item.update()
 
+    def _reactive_enabled(self) -> bool:
+        return bool(self._audio_cfg("ss_reactive_enabled", False))
+
+    def _reactive_intensity(self) -> float:
+        try:
+            return max(0.0, min(1.0, float(self._audio_cfg("ss_reactive_intensity", 65)) / 100.0))
+        except (TypeError, ValueError):
+            return 0.65
+
+    def _reactive_edm(self) -> bool:
+        return bool(self._audio_cfg("ss_reactive_edm", True))
+
+    def _reactive_boost(self) -> float:
+        return 1.65 if self._reactive_edm() else 1.0
+
+    def _reactive_option(self, key: str, default: bool = True) -> bool:
+        return bool(self._audio_cfg(key, default))
+
+    def _reactive_offset_ms(self) -> int:
+        try:
+            return max(-250, min(250, int(self._audio_cfg("ss_reactive_offset_ms", 0))))
+        except (TypeError, ValueError):
+            return 0
+
+    def _build_reactive_outline(self, px: QPixmap, outline_enabled: bool = True,
+                                glow_enabled: bool = True) -> QPixmap:
+        scale = min(1.0, self._REACTIVE_OUTLINE_CAP / max(px.width(), px.height(), 1))
+        sw = max(1, int(round(px.width() * scale)))
+        sh = max(1, int(round(px.height() * scale)))
+        small = px.scaled(sw, sh, Qt.AspectRatioMode.IgnoreAspectRatio,
+                          Qt.TransformationMode.SmoothTransformation).toImage()
+        small = small.convertToFormat(QImage.Format.Format_RGBA8888)
+        pil = Image.frombytes("RGBA", (sw, sh), small.bits().tobytes())
+        edges = ImageChops.lighter(
+            ImageOps.grayscale(pil).filter(ImageFilter.FIND_EDGES),
+            pil.getchannel("A").filter(ImageFilter.FIND_EDGES),
+        ).point(lambda v: 255 if v >= 24 else 0)
+        layers = []
+        edm = self._reactive_edm()
+        if glow_enabled:
+            glow = edges.filter(ImageFilter.GaussianBlur(
+                max(3.0 if edm else 2.0, min(sw, sh) / (110.0 if edm else 160.0))))
+            glow_layer = Image.new("RGBA", (sw, sh), (70, 190, 255, 0))
+            glow_layer.putalpha(glow.point(lambda v: int(v * (0.95 if edm else 0.85))))
+            layers.append(glow_layer)
+        if outline_enabled:
+            core = edges.filter(ImageFilter.MaxFilter(5 if edm else 3)).filter(ImageFilter.GaussianBlur(0.55))
+            core_layer = Image.new("RGBA", (sw, sh), (225, 250, 255, 0))
+            core_layer.putalpha(core.point(lambda v: int(v * (0.9 if edm else 0.75))))
+            layers.append(core_layer)
+        if not layers:
+            return QPixmap()
+        out = layers[0]
+        for layer in layers[1:]:
+            out = Image.alpha_composite(out, layer)
+        qimg = QImage(out.tobytes(), sw, sh, sw * 4,
+                      QImage.Format.Format_RGBA8888).copy()
+        return QPixmap.fromImage(qimg)
+
+    def _reactive_prepare_image(self, path: str | None, px: QPixmap):
+        self._reactive_kick = 0.0
+        self._recycle_reactive_transients()
+        flash = getattr(self, "_reactive_flash_item", None)
+        if flash is not None and px is not None and not px.isNull():
+            flash.setRect(QRectF(0, 0, px.width(), px.height()))
+            flash.hide()
+            flash.setOpacity(0.0)
+        if px is None or px.isNull():
+            self._hide_reactive_outline()
+            return
+        want_outline = self._reactive_option("ss_reactive_outline", True)
+        want_glow = self._reactive_option("ss_reactive_glow", True)
+        if not self._reactive_enabled() or not (want_outline or want_glow):
+            self._reactive_outline_key = None
+            self._hide_reactive_outline()
+            return
+        key = (path, self._rot, want_outline, want_glow, self._reactive_edm(),
+               px.width(), px.height(), px.cacheKey())
+        if (key == self._reactive_outline_key and self._reactive_outline_item is not None
+                and not self._reactive_outline_item.pixmap().isNull()):
+            outline = self._reactive_outline_item.pixmap()
+            sx = px.width() / max(1, outline.width())
+            sy = px.height() / max(1, outline.height())
+            self._reactive_outline_base = (sx, sy)
+            self._set_reactive_outline_scale(sx, sy)
+            return
+        try:
+            outline = self._build_reactive_outline(px, want_outline, want_glow)
+            if self._reactive_outline_item is None:
+                self._reactive_outline_item = QGraphicsPixmapItem()
+                self._reactive_outline_item.setZValue(7)
+                self._reactive_outline_item.setTransformationMode(
+                    Qt.TransformationMode.SmoothTransformation)
+                self._scene.addItem(self._reactive_outline_item)
+            self._reactive_outline_item.setPixmap(outline)
+            self._reactive_outline_item.setPos(0, 0)
+            sx = px.width() / max(1, outline.width())
+            sy = px.height() / max(1, outline.height())
+            self._reactive_outline_base = (sx, sy)
+            self._set_reactive_outline_scale(sx, sy)
+            self._reactive_outline_key = key
+            self._reactive_outline_item.hide()
+        except Exception:
+            self._reactive_outline_key = None
+            self._hide_reactive_outline()
+
+    def _set_reactive_outline_scale(self, sx: float, sy: float):
+        """非等比縮小とパルスを輪郭中央基準で適用する。"""
+        item = self._reactive_outline_item
+        if item is None or item.pixmap().isNull():
+            return
+        base_sx, base_sy = self._reactive_outline_base
+        if base_sx <= 0.0 or base_sy <= 0.0:
+            return
+        bounce_x = sx / base_sx
+        bounce_y = sy / base_sy
+        image_cx = item.pixmap().width() * base_sx / 2.0
+        image_cy = item.pixmap().height() * base_sy / 2.0
+        # 原寸拡大後に中央へパルスする。translate→scale の順で、
+        # 中心移動量 (1 - bounce) * image_center を先に平行移動する。
+        item.setTransformOriginPoint(QPointF(0, 0))
+        item.setTransform(QTransform().translate(
+            (1.0 - bounce_x) * image_cx, (1.0 - bounce_y) * image_cy).scale(sx, sy))
+
+    def _hide_reactive_outline(self):
+        item = getattr(self, "_reactive_outline_item", None)
+        if item is not None:
+            item.hide()
+            item.setOpacity(0.0)
+
+    def _apply_reactive_view(self, recenter=False):
+        view = self._scene_widget
+        center = None if recenter else view.mapToScene(view.viewport().rect().center())
+        scale = max(0.0001, float(getattr(self, "_reactive_base_view_scale", 1.0)))
+        scale *= max(0.5, min(1.5, float(getattr(self, "_reactive_view_scale", 1.0))))
+        applied = getattr(self, "_reactive_applied_scale", None)
+        if not recenter and applied is not None and abs(scale - applied) < 0.0002:
+            return
+        view.resetTransform()
+        view.scale(scale, scale)
+        if center is None:
+            view.centerOn(self._pix_item)
+        else:
+            view.centerOn(center)
+        self._reactive_applied_scale = scale
+
+    def _sample_reactive_features(self, pos_s: float) -> tuple[float, ...]:
+        features = self._reactive_features
+        if features is None or len(features) == 0:
+            return (0.0, 0.0, 0.0, 0.0, 0.0)
+        x = max(0.0, pos_s) * self._reactive_feature_rate
+        i = int(x)
+        if i >= len(features):
+            return (0.0, 0.0, 0.0, 0.0, 0.0)
+        if i == len(features) - 1:
+            return tuple(float(v) for v in features[-1])
+        a = x - i
+        return tuple(float(features[i, c] * (1.0 - a) + features[i + 1, c] * a)
+                     for c in range(5))
+
+    def _ensure_reactive_flash(self, w: int, h: int):
+        if self._reactive_flash_item is None:
+            self._reactive_flash_item = QGraphicsRectItem()
+            self._reactive_flash_item.setZValue(4)
+            self._reactive_flash_item.setPen(Qt.PenStyle.NoPen)
+            self._reactive_flash_item.setBrush(QColor(215, 240, 255))
+            self._scene.addItem(self._reactive_flash_item)
+        self._reactive_flash_item.setRect(QRectF(0, 0, w, h))
+        self._reactive_flash_item.hide()
+
+    def _trigger_reactive_ripple(self, strength: float):
+        cap = 7 if self._reactive_edm() else self._REACTIVE_RIPPLE_CAP
+        if len(self._reactive_ripples) >= cap:
+            return
+        w, h = self._pix_item.pixmap().width(), self._pix_item.pixmap().height()
+        if w <= 0 or h <= 0:
+            return
+        if self._reactive_ripple_pool:
+            item = self._reactive_ripple_pool.pop()
+        else:
+            item = QGraphicsEllipseItem()
+            item.setZValue(6)
+            item.setBrush(Qt.BrushStyle.NoBrush)
+            self._scene.addItem(item)
+        edm = self._reactive_edm()
+        color = QColor(255, 105, 220) if edm and random.random() < 0.35 else QColor(105, 215, 255)
+        item.setPen(QPen(color, max(1.0, min(w, h) * (0.006 if edm else 0.003))))
+        item.setPos(w / 2.0, h / 2.0)
+        item.setOpacity(0.0)
+        item.show()
+        self._reactive_ripples.append({"item": item, "age": 0.0, "strength": strength})
+
+    def _trigger_reactive_particles(self, strength: float):
+        edm = self._reactive_edm()
+        cap = 36 if edm else self._REACTIVE_PARTICLE_CAP
+        available = cap - len(self._reactive_particles)
+        if available <= 0:
+            return
+        w, h = self._pix_item.pixmap().width(), self._pix_item.pixmap().height()
+        if w <= 0 or h <= 0:
+            return
+        count = min(available, max(3 if edm else 2, int((5 if edm else 3) + strength * (14 if edm else 6))))
+        unit = min(w, h)
+        palette = (QColor(90, 225, 255), QColor(255, 100, 225), QColor(175, 125, 255))
+        for _ in range(count):
+            if self._reactive_particle_pool:
+                item = self._reactive_particle_pool.pop()
+            else:
+                item = QGraphicsEllipseItem()
+                item.setZValue(8)
+                item.setPen(Qt.PenStyle.NoPen)
+                self._scene.addItem(item)
+            item.setBrush(random.choice(palette) if edm else QColor(130, 225, 255))
+            angle = random.uniform(0.0, math.tau)
+            radius = unit * random.uniform(0.16, 0.38 if edm else 0.34)
+            speed = unit * random.uniform(0.45 if edm else 0.32, 0.95 if edm else 0.72)
+            size = max(1.0, min(16.0 if edm else 10.0,
+                                unit * random.uniform(0.005 if edm else 0.004, 0.014 if edm else 0.009)))
+            item.setRect(QRectF(-size / 2, -size / 2, size, size))
+            item.setPos(w / 2 + math.cos(angle) * radius,
+                        h / 2 + math.sin(angle) * radius)
+            item.setOpacity(0.95)
+            item.show()
+            self._reactive_particles.append({
+                "item": item, "age": 0.0,
+                "life": random.uniform(0.7, 1.2) if edm else random.uniform(0.55, 1.0),
+                "vx": math.cos(angle) * speed,
+                "vy": math.sin(angle) * speed,
+                "gravity": unit * random.uniform(0.02, 0.08),
+            })
+
+    def _update_reactive_particles(self, dt: float, intensity: float):
+        for st in list(self._reactive_particles):
+            st["age"] += dt
+            if st["age"] >= st["life"]:
+                st["item"].hide()
+                self._reactive_particle_pool.append(st["item"])
+                self._reactive_particles.remove(st)
+                continue
+            item = st["item"]
+            pos = item.pos()
+            st["vy"] += st["gravity"] * dt
+            item.setPos(pos.x() + st["vx"] * dt, pos.y() + st["vy"] * dt)
+            fade = 1.0 - st["age"] / st["life"]
+            item.setOpacity(max(0.0, fade * intensity))
+
+    def _recycle_reactive_transients(self):
+        for st in self._reactive_ripples:
+            st["item"].hide()
+            self._reactive_ripple_pool.append(st["item"])
+        self._reactive_ripples.clear()
+        for st in self._reactive_particles:
+            st["item"].hide()
+            self._reactive_particle_pool.append(st["item"])
+        self._reactive_particles.clear()
+        for item in self._reactive_ripple_pool:
+            item.hide()
+        for item in self._reactive_particle_pool:
+            item.hide()
+
+    def _reset_reactive_frame(self):
+        self._reactive_timer.stop()
+        self._reactive_smoothed = [0.0] * 5
+        self._reactive_kick = 0.0
+        self._reactive_last_pos = None
+        self._reactive_last_beat_index = -1
+        self._reactive_last_onset = 0.0
+        self._reactive_view_scale = 1.0
+        self._hide_reactive_outline()
+        if (self._reactive_outline_item is not None
+                and not self._reactive_outline_item.pixmap().isNull()):
+            sx, sy = self._reactive_outline_base
+            self._set_reactive_outline_scale(sx, sy)
+        if self._reactive_flash_item is not None:
+            self._reactive_flash_item.hide()
+            self._reactive_flash_item.setOpacity(0.0)
+        self._recycle_reactive_transients()
+        if getattr(self, "_scene_widget", None) is not None:
+            self._apply_reactive_view()
+
+    def _stop_reactive(self):
+        self._reset_reactive_frame()
+
+    def _clear_reactive_features(self):
+        self._stop_reactive()
+        self._reactive_features = None
+        self._reactive_media_position = None
+
+    def _set_reactive_features(self, features):
+        self._reactive_features = features
+        self._reactive_media_position = None
+        self._reset_reactive_frame()
+        self._sync_reactive_timer()
+
+    def _sync_reactive_timer(self):
+        player = getattr(self, "_bgm_player", None)
+        active = (self._reactive_enabled() and self._music_on and not self._hmv_paused
+                  and player is not None and self._reactive_features is not None
+                  and getattr(self, "_anim_state", None) is None
+                  and player.playbackState() == QMediaPlayer.PlaybackState.PlayingState)
+        if active:
+            if not self._reactive_timer.isActive():
+                self._reactive_timer.start()
+        else:
+            self._reset_reactive_frame()
+
+    def _reactive_step(self):
+        player = getattr(self, "_bgm_player", None)
+        if (player is None or not self._reactive_enabled() or not self._music_on
+                or self._hmv_paused or self._reactive_features is None
+                or getattr(self, "_anim_state", None) is not None
+                or player.playbackState() != QMediaPlayer.PlaybackState.PlayingState):
+            self._reactive_timer.stop()
+            self._reset_reactive_frame()
+            return
+        pos_ms = int(player.position())
+        if pos_ms < 0:
+            return
+        pos_s = max(0.0, pos_ms / 1000.0 + self._reactive_offset_ms() / 1000.0)
+        if self._reactive_last_pos is not None and abs(pos_s - self._reactive_last_pos) > 1.0:
+            self._reactive_last_beat_index = -1
+            self._reactive_last_onset = 0.0
+        self._reactive_last_pos = pos_s
+        raw = self._sample_reactive_features(pos_s)
+        edm = self._reactive_edm()
+        for i, value in enumerate(raw):
+            if value > self._reactive_smoothed[i]:
+                blend = 0.68 if edm else 0.55
+            else:
+                blend = 0.18 if edm else 0.22
+            self._reactive_smoothed[i] += (value - self._reactive_smoothed[i]) * blend
+        rms, low, mid, high, onset = self._reactive_smoothed
+        intensity = self._reactive_intensity()
+        boost = self._reactive_boost()
+        beat_index = bisect.bisect_right(self._beat_times, pos_s) - 1
+        beat_env = 0.0
+        beat_trigger = False
+        if beat_index >= 0:
+            since_beat = pos_s - self._beat_times[beat_index]
+            if 0.0 <= since_beat <= 0.45:
+                beat_env = math.exp(-since_beat * 9.0)
+            if (beat_index != self._reactive_last_beat_index
+                    and -0.05 <= since_beat <= 0.28):
+                beat_trigger = True
+        self._reactive_last_beat_index = beat_index
+        onset_trigger = (not self._beat_times and onset > 0.48
+                         and self._reactive_last_onset <= 0.48 and low > 0.18)
+        self._reactive_last_onset = onset
+        kick_target = max(beat_env, low * onset * 0.72)
+        self._reactive_kick = max(kick_target, self._reactive_kick * 0.74)
+        kick = self._reactive_kick
+        trigger = beat_trigger or onset_trigger
+        if trigger:
+            if self._reactive_option("ss_reactive_ripple", True):
+                self._trigger_reactive_ripple(max(0.3, kick))
+            if self._reactive_option("ss_reactive_particles", True):
+                self._trigger_reactive_particles(max(0.25, kick))
+
+        if self._reactive_option("ss_reactive_zoom", True):
+            self._reactive_view_scale = 1.0 + 0.11 * intensity * boost * kick
+        else:
+            self._reactive_view_scale = 1.0
+        self._apply_reactive_view()
+
+        outline = self._reactive_outline_item
+        if outline is not None and not outline.pixmap().isNull():
+            sx, sy = self._reactive_outline_base
+            if self._reactive_option("ss_reactive_outline", True):
+                bounce = 1.0 + intensity * boost * (0.085 * kick + 0.006 * low)
+                opacity = intensity * boost * (0.2 + 0.78 * kick)
+                outline.show()
+            elif self._reactive_option("ss_reactive_glow", True):
+                bounce = 1.0 + 0.005 * intensity * low
+                opacity = intensity * boost * (0.08 + 0.18 * low)
+                outline.show()
+            else:
+                bounce = 1.0
+                opacity = 0.0
+                outline.hide()
+            self._set_reactive_outline_scale(sx * bounce, sy * bounce)
+            outline.setOpacity(max(0.0, min(0.95, opacity)))
+        else:
+            self._hide_reactive_outline()
+
+        flash = self._reactive_flash_item
+        if self._reactive_option("ss_reactive_flash", False):
+            if flash is None:
+                self._ensure_reactive_flash(self._pix_item.pixmap().width(),
+                                            self._pix_item.pixmap().height())
+                flash = self._reactive_flash_item
+            safe = self._reactive_option("ss_reactive_flash_safe", True)
+            cap = 0.035 if safe else 0.08
+            opacity = cap * intensity * kick * (0.4 + 0.6 * rms)
+            if safe:
+                opacity *= min(1.0, max(0.0, (kick - 0.35) / 0.45))
+            flash.setOpacity(max(0.0, min(cap, opacity)))
+            if opacity > 0.001:
+                flash.show()
+            else:
+                flash.hide()
+        elif flash is not None:
+            flash.hide()
+            flash.setOpacity(0.0)
+
+        dt = self._REACTIVE_INTERVAL / 1000.0
+        for st in list(self._reactive_ripples):
+            st["age"] += dt
+            life = 1.1 if boost > 1.0 else 0.85
+            if st["age"] >= life:
+                st["item"].hide()
+                self._reactive_ripple_pool.append(st["item"])
+                self._reactive_ripples.remove(st)
+                continue
+            w, h = self._pix_item.pixmap().width(), self._pix_item.pixmap().height()
+            radius = min(w, h) * ((0.12 if boost > 1.0 else 0.18)
+                                  + (0.75 if boost > 1.0 else 0.58) * st["age"] / life)
+            st["item"].setRect(QRectF(-radius, -radius, radius * 2, radius * 2))
+            st["item"].setOpacity(
+                min(0.95, max(0.0, (1.0 - st["age"] / life) * 0.72 * intensity * boost * st["strength"])))
+        self._update_reactive_particles(dt, intensity)
+
+    def _on_bgm_position_changed(self, position: int):
+        last = self._reactive_media_position
+        self._reactive_media_position = int(position)
+        if last is not None and abs(int(position) - last) > 1500:
+            self._reset_reactive_frame()
+            self._sync_reactive_timer()
+
+    def _set_image_info(self, path: str, px: QPixmap | None = None, error: str = ""):
+        if not self._paths or path != self._paths[self._idx]:
+            return
+        safety = safety_display(image_safety(path, META.peek(path)))
+        details = T("読込失敗: {0}").format(error) if error else ""
+        if px is not None and not px.isNull() and not error:
+            try:
+                details = (f"{px.width()}×{px.height()}  "
+                           f"{os.stat(path).st_size//1024}KB")
+            except OSError:
+                pass
+        mode = T("実寸") if self._fit_mode == "actual" else "fit"
+        parts = [f"[{safety}] {os.path.basename(path)}"]
+        if details:
+            parts.append(details)
+        parts.extend((f"[{self._idx+1}/{len(self._paths)}]",
+                      f"{Te('ズーム:')}{self._zoom*100:.0f}%  {mode}",
+                      Te("  ←→ナビ  Space=全画面")))
+        self._info_lbl.setText("  ".join(parts))
+
+    def _show_hmv_waiting(self):
+        self._cancel_image_requests()
+        try:
+            self._finish_transition()
+        except Exception:
+            pass
+        self._reset_reactive_frame()
+        self._pix_item.setPixmap(QPixmap())
+        self._overlay_item.setPlainText(T("メタデータ読込中..."))
+        br = self._overlay_item.boundingRect()
+        sr = self._scene.sceneRect()
+        self._overlay_item.setPos(
+            sr.center().x() - br.width() / 2 if sr.width() > 0 else 100,
+            sr.center().y() - br.height() / 2 if sr.height() > 0 else 100)
+        self._overlay_item.show()
+        self._info_lbl.setText(T("メタデータ読込中..."))
+        self._seekbar.setEnabled(False)
+        self._ss_btn.setEnabled(False)
+        if self._ss_running():
+            self._pause_ss()
 
     def _show_image(self):
         if not self._paths: return
+        if self._hmv_filter_pending():
+            self._show_hmv_waiting()
+            return
+        self._seekbar.setEnabled(True)
+        self._ss_btn.setEnabled(True)
         self._overlay_item.hide()
         path = self._paths[self._idx]
         self._seekbar.setValue(self._idx)
         self._seek_lbl.setText(f"{self._idx+1}/{len(self._paths)}")
+        self._set_image_info(path)
         # 非同期デコード開始（キャッシュヒット時は即時描画、ミス時はローダー起動）
         self._load_pixmap_async(path)
 
@@ -5906,6 +7374,14 @@ class FullViewer(QDialog):
             self._stop_beat_sync()
         except Exception:
             pass
+        try:
+            self._retire_beat_worker()
+        except Exception:
+            pass
+        try:
+            self._clear_reactive_features()
+        except Exception:
+            pass
         if getattr(self, "_ss_job", None) is not None:
             self._ss_job.stop()
         try:
@@ -5926,6 +7402,13 @@ class FullViewer(QDialog):
                 self._fit_loader.terminate()
                 self._fit_loader.wait(300)
             self._fit_loader = None
+        for loader in self._retired_image_loaders:
+            loader.cancel()
+            loader.wait(1000)
+            if loader.isRunning():
+                loader.terminate()
+                loader.wait(300)
+        self._retired_image_loaders.clear()
         self._busy_timer.stop()
         # [v2.35] 進行中のスライドアニメを確定させ、オーバーレイ残骸を残さない
         try:
@@ -5958,6 +7441,8 @@ class FullViewer(QDialog):
 
     # ── ナビゲーション ────────────────────────────────────────────────────
     def _next(self):
+        if self._hmv_filter_pending():
+            return
         self._at_end = False
         self._slide_dir = 1   # [v2.35.3] 次へ = 正方向スライド
         if self._idx >= len(self._paths) - 1:
@@ -5966,10 +7451,13 @@ class FullViewer(QDialog):
             else:
                 self._at_end = True; self._show_image()
                 self._show_end_overlay(T("▌ 最後の画像です"))
+                self._finish_hmv_at_end()
         else:
             self._idx += 1; self._zoom = 1.0; self._show_image()
 
     def _prev(self):
+        if self._hmv_filter_pending():
+            return
         self._at_end = False
         self._slide_dir = -1  # [v2.35.3] 前へ = 逆方向スライド
         if self._idx <= 0:
@@ -5978,16 +7466,33 @@ class FullViewer(QDialog):
             else:
                 self._at_end = True; self._show_image()
                 self._show_end_overlay(T("▌ 最初の画像です"))
+                self._finish_hmv_at_end()
         else:
             self._idx -= 1; self._zoom = 1.0; self._show_image()
 
     # ── シーク ────────────────────────────────────────────────────────────
+    def _refresh_safety_info(self):
+        if not self._paths or not (0 <= self._idx < len(self._paths)):
+            return
+        path = self._paths[self._idx]
+        safety = safety_display(image_safety(path, META.peek(path)))
+        text = self._info_lbl.text()
+        if text.startswith("["):
+            text = text.split("]", 1)[1].lstrip()
+        self._info_lbl.setText(f"[{safety}] {text or os.path.basename(path)}")
+
     def _on_seek_move(self, val: int):
+        if self._hmv_filter_pending():
+            return
         if 0 <= val < len(self._paths):
             self._seek_lbl.setText(f"{val+1}/{len(self._paths)}")
-            self._info_lbl.setText(os.path.basename(self._paths[val]))
+            path = self._paths[val]
+            safety = safety_display(image_safety(path, META.peek(path)))
+            self._info_lbl.setText(f"[{safety}] {os.path.basename(path)}")
 
     def _on_seek_release(self):
+        if self._hmv_filter_pending():
+            return
         idx = self._seekbar.value()
         idx = max(0, min(len(self._paths)-1, idx))
         if idx != self._idx:
@@ -5999,11 +7504,16 @@ class FullViewer(QDialog):
         """fit ↔ actual を切り替える。ウィンドウ状態は変更しない。"""
         if self._fit_mode == "fit":
             self._fit_mode = "actual"
-            self._fit_btn.setText(T("⊟ 原寸"))
+            self._fit_btn.setText(T("原寸"))
         else:
             self._fit_mode = "fit"
-            self._fit_btn.setText("⊞ fit")
+            self._fit_btn.setText(T("fit"))
         self._zoom = 1.0
+        self._fit_mode_pref = self._fit_mode
+        mw = self.parent()
+        if mw is not None and hasattr(mw, "_cfg"):
+            mw._cfg["fullviewer_fit_mode"] = self._fit_mode
+            save_cfg(mw._cfg)
         self._show_image()
 
     def _rotate(self):
@@ -6052,14 +7562,20 @@ class FullViewer(QDialog):
     def _init_audio_state(self):
         """設定から BGM/音声フォルダをスキャンしてランダムキューを作る。
         QMediaPlayer そのものは _ensure_audio_players で遅延作成。"""
-        if not HAS_MULTIMEDIA:
-            return
         bgm_folder = (self._audio_cfg("ss_bgm_folder", "") or "").strip()
         voice_folder = (self._audio_cfg("ss_voice_folder", "") or "").strip()
+        self._bgm_folder = bgm_folder
+        self._voice_folder = voice_folder
+        if not HAS_MULTIMEDIA:
+            return
         if bgm_folder and os.path.isdir(bgm_folder):
             self._bgm_queue = self._scan_audio_folder(bgm_folder)
         if voice_folder and os.path.isdir(voice_folder):
             self._voice_queue = self._scan_audio_folder(voice_folder)
+        self._music_on = bool(
+            (self._bgm_queue and self._audio_cfg("ss_bgm_enabled", False))
+            or (self._voice_queue and self._audio_cfg("ss_voice_enabled", False))
+        )
 
     def _scan_audio_folder(self, folder: str) -> list[str]:
         """フォルダ内の音楽ファイルを列挙したパスリストを返す。再帰はしない（1階層のみ）。
@@ -6095,6 +7611,7 @@ class FullViewer(QDialog):
         self._bgm_player.setAudioOutput(self._bgm_output)
         self._bgm_player.mediaStatusChanged.connect(self._on_bgm_status)
         self._bgm_player.playbackStateChanged.connect(self._on_bgm_playback_state)
+        self._bgm_player.positionChanged.connect(self._on_bgm_position_changed)
         self._voice_output = QAudioOutput(self)
         self._voice_player = QMediaPlayer(self)
         self._voice_player.setAudioOutput(self._voice_output)
@@ -6110,11 +7627,25 @@ class FullViewer(QDialog):
         self._audio_ready = True
 
     def apply_audio_settings(self):
-        """[v2.38.3] 環境設定で音量/速度を変えた際、実行中プレイヤーへ再適用。
-        _ensure_audio_players は初回のみ適用するため、この再適用がないと
-        設定ダイアログからの速度変更が音声テンポに反映されない。"""
+        """設定変更を実行中の BGM/音声・キューへ即時反映する。"""
+        bgm_changed, voice_changed = self._sync_audio_queues()
+        randomize = bool(self._audio_cfg("ss_audio_random", True))
+        self._reorder_queue("_bgm_queue", "_bgm_idx", randomize)
+        self._reorder_queue("_voice_queue", "_voice_idx", randomize)
+        running = self._ss_running()
+        paused = self._hmv_paused
+        bgm_enabled = bool(self._audio_cfg("ss_bgm_enabled", False))
+        voice_enabled = bool(self._audio_cfg("ss_voice_enabled", False))
         if not self._audio_ready:
-            return
+            if self._music_on and (running or paused) and (
+                    (bgm_enabled and self._bgm_queue) or (voice_enabled and self._voice_queue)):
+                self._ensure_audio_players()
+            else:
+                px = self._pix_item.pixmap()
+                if self._reactive_enabled() and not px.isNull():
+                    self._reactive_prepare_image(self._cur_path, px)
+                self._sync_reactive_timer()
+                return
         if self._bgm_output is not None:
             self._bgm_output.setVolume(
                 max(0.0, min(1.0, self._audio_cfg("ss_bgm_volume", 80) / 100.0)))
@@ -6131,15 +7662,56 @@ class FullViewer(QDialog):
         except Exception:
             pass
 
+        bgm_active = self._music_on and bgm_enabled and bool(self._bgm_queue)
+        if not bgm_active:
+            if self._bgm_player is not None:
+                self._bgm_player.stop()
+            self._bgm_playing_path = None
+            self._clear_reactive_features()
+            self._beat_times = []
+            self._beat_slide_times = []
+            if running:
+                self._resync_ss()
+            elif paused or self._wavesync_active:
+                self._stop_beat_sync()
+        elif running:
+            if (bgm_changed or self._bgm_playing_path is None
+                    or self._bgm_player.playbackState() != QMediaPlayer.PlaybackState.PlayingState):
+                self._play_bgm_current()
+        elif paused:
+            if bgm_changed or self._bgm_playing_path is None:
+                self._play_bgm_current(play=False)
+
+        voice_active = self._music_on and voice_enabled and bool(self._voice_queue)
+        if not voice_active:
+            if self._voice_player is not None:
+                self._voice_player.stop()
+            self._voice_playing_path = None
+        elif running:
+            if (voice_changed or self._voice_playing_path is None
+                    or self._voice_player.playbackState() != QMediaPlayer.PlaybackState.PlayingState):
+                self._play_voice_current()
+        elif paused:
+            if voice_changed or self._voice_playing_path is None:
+                self._play_voice_current(play=False)
+
+        if (self._reactive_enabled() and self._reactive_features is None
+                and self._bgm_player is not None and self._bgm_queue):
+            self._kick_beat_detect()
+        px = self._pix_item.pixmap()
+        if self._reactive_enabled() and not px.isNull():
+            self._reactive_prepare_image(self._cur_path, px)
+        self._sync_reactive_timer()
+
     def _on_bgm_status(self, status):
-        if status == QMediaPlayer.MediaStatus.EndOfMedia:
+        if status == QMediaPlayer.MediaStatus.EndOfMedia and self._ss_running():
             self._play_bgm_current(advance=True)
 
     def _on_voice_status(self, status):
-        if status == QMediaPlayer.MediaStatus.EndOfMedia:
+        if status == QMediaPlayer.MediaStatus.EndOfMedia and self._ss_running():
             self._play_voice_current(advance=True)
 
-    def _play_bgm_current(self, advance: bool = False):
+    def _play_bgm_current(self, advance: bool = False, play: bool = True):
         if not self._bgm_queue:
             return
         if advance:
@@ -6148,36 +7720,46 @@ class FullViewer(QDialog):
         # [v2.38.1] 同じ曲を再生/再開するとき setSource を繰り返すと QtMultimedia が
         # 不安定化し、連打で FullViewer が落ち・音声だけ残る。停止済みなら play() で再開する。
         if (not advance) and path == self._bgm_playing_path:
-            if self._bgm_player.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
+            if play and self._bgm_player.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
                 self._bgm_player.play()
             return
         self._bgm_playing_path = path
+        clear_reactive = getattr(self, "_clear_reactive_features", None)
+        if clear_reactive is not None:
+            clear_reactive()
         self._bgm_player.stop()
         self._bgm_player.setSource(QUrl.fromLocalFile(path))
-        self._bgm_player.play()
-        # 波形同期: 曲が変わったのでビート列を破棄し再検出。検出完了までは
-        # 固定/BPM 間隔で送り続け、_on_beat_detected で実ビートへ昇格する。
-        if self._wavesync_enabled():
+        if play:
+            self._bgm_player.play()
+        # 曲が変わったら拍列と音声特徴量を破棄し、検出完了までは従来の間隔で送る。
+        reactive_enabled = getattr(self, "_reactive_enabled", None)
+        if self._wavesync_enabled() or (reactive_enabled is not None and reactive_enabled()):
             ss_running = self._ss_running()
             self._beat_times = []
             self._beat_slide_times = []
             self._kick_beat_detect()
-            if ss_running:
+            if self._wavesync_enabled() and ss_running:
                 self._stop_beat_sync()
                 beat_ms = self._beat_interval_ms()
                 interval = beat_ms if beat_ms is not None else max(16, int(self._ss_spin.value() * 1000 / 60))
                 self._ss_job.start(interval)
-                self._ss_btn.setText("⏸ SS")
+                self._update_hmv_buttons()
 
-    def _play_voice_current(self, advance: bool = False):
+    def _play_voice_current(self, advance: bool = False, play: bool = True):
         if not self._voice_queue:
             return
         if advance:
             self._voice_idx = (self._voice_idx + 1) % len(self._voice_queue)
         path = self._voice_queue[self._voice_idx]
+        if (not advance) and path == self._voice_playing_path:
+            if play and self._voice_player.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
+                self._voice_player.play()
+            return
+        self._voice_playing_path = path
         self._voice_player.stop()
         self._voice_player.setSource(self._prepare_voice_source(path))
-        self._voice_player.play()
+        if play:
+            self._voice_player.play()
 
     def _prepare_voice_source(self, path: str):
         """[v2.38.2] voice 音量が 100% 超のとき PCM を gain 倍した temp wav を作り、
@@ -6211,26 +7793,45 @@ class FullViewer(QDialog):
             return QUrl.fromLocalFile(path)
 
     def _ss_running(self) -> bool:
-        """スライドショーが実行中か（固定/BPM タイマー or 波形同期）。"""
+        """HMVが実行中か（一時停止中はFalse）。"""
+        if self._hmv_paused:
+            return False
         return (self._ss_job is not None and self._ss_job.isActive()) or self._wavesync_active
 
-    def _scan_if_empty(self):
-        """キューが空なら設定フォルダを再スキャン（設定変更後に対応）。"""
-        if not self._bgm_queue:
-            folder = (self._audio_cfg("ss_bgm_folder", "") or "").strip()
-            if folder and os.path.isdir(folder):
-                self._bgm_queue = self._scan_audio_folder(folder)
-        if not self._voice_queue:
-            folder = (self._audio_cfg("ss_voice_folder", "") or "").strip()
-            if folder and os.path.isdir(folder):
-                self._voice_queue = self._scan_audio_folder(folder)
+    def _update_hmv_buttons(self):
+        running = self._ss_running()
+        self._ss_btn.setText("⏸ スライド" if running else "▶ スライド")
+        self._ss_stop_btn.setEnabled(running or self._hmv_paused)
+
+    def _sync_audio_queues(self):
+        """設定フォルダの変更・空キューを反映し、各キューの変更有無を返す。"""
+        changed = {}
+        for kind in ("bgm", "voice"):
+            folder = (self._audio_cfg(f"ss_{kind}_folder", "") or "").strip()
+            queue_attr = f"_{kind}_queue"
+            idx_attr = f"_{kind}_idx"
+            folder_attr = f"_{kind}_folder"
+            playing_attr = f"_{kind}_playing_path"
+            old_folder = getattr(self, folder_attr, "")
+            old_queue = list(getattr(self, queue_attr, []))
+            queue_changed = folder != old_folder or not old_queue
+            if queue_changed:
+                queue = self._scan_audio_folder(folder) if folder and os.path.isdir(folder) else []
+                setattr(self, queue_attr, queue)
+                setattr(self, idx_attr, 0)
+                setattr(self, playing_attr, None)
+                changed[kind] = folder != old_folder or queue != old_queue
+            else:
+                changed[kind] = False
+            setattr(self, folder_attr, folder)
+        return changed["bgm"], changed["voice"]
 
     def _start_audio_playback(self):
         """BGM/音声を再生開始（スライドショー開始・🎵 アーム中に呼ぶ）。"""
         if not HAS_MULTIMEDIA:
             return
         self._ensure_audio_players()
-        self._scan_if_empty()
+        self._sync_audio_queues()
         if bool(self._audio_cfg("ss_bgm_enabled", False)) and self._bgm_queue:
             self._bgm_idx = 0
             self._play_bgm_current(advance=False)
@@ -6238,12 +7839,38 @@ class FullViewer(QDialog):
             self._voice_idx = 0
             self._play_voice_current(advance=False)
 
+    def _pause_audio_playback(self):
+        if self._bgm_player is not None:
+            self._bgm_player.pause()
+        if self._voice_player is not None:
+            self._voice_player.pause()
+        stop_reactive = getattr(self, "_stop_reactive", None)
+        if stop_reactive is not None:
+            stop_reactive()
+
+    def _resume_audio_playback(self):
+        if self._bgm_player is not None and self._bgm_queue and bool(self._audio_cfg("ss_bgm_enabled", False)):
+            self._bgm_player.play()
+        if self._voice_player is not None and self._voice_queue and bool(self._audio_cfg("ss_voice_enabled", False)):
+            self._voice_player.play()
+
     def _stop_audio_playback(self):
-        """再生中の BGM/音声を止める（スライドショー停止・🎵 OFF で呼ぶ）。"""
+        """再生中の BGM/音声を止める（HMV停止・🎵 OFF で呼ぶ）。"""
         if self._bgm_player is not None:
             self._bgm_player.stop()
         if self._voice_player is not None:
             self._voice_player.stop()
+        stop_reactive = getattr(self, "_stop_reactive", None)
+        if stop_reactive is not None:
+            stop_reactive()
+
+    def _update_music_button(self):
+        on = self._music_on
+        self._music_btn.setChecked(on)
+        self._music_btn.setText("🎵 " + T("スライド音楽 ON" if on else "スライド音楽 OFF"))
+        self._music_btn.setToolTip(
+            T("スライド音楽 OFF" if on else "スライド音楽 ON")
+            if HAS_MULTIMEDIA else T("PySide6.QtMultimedia が無効"))
 
     def _toggle_music(self):
         """🎵 = スライドショー音楽の Arm スイッチ (v2.34.1)。
@@ -6255,16 +7882,14 @@ class FullViewer(QDialog):
         if self._music_on:
             self._music_on = False
             self._stop_audio_playback()
-            self._music_btn.setText("🎵")
-            self._music_btn.setToolTip(T("スライドショー音楽 ON"))
+            self._update_music_button()
             if self._ss_running():          # 位置基準を失うので間隔を再計算
                 self._resync_ss()
         else:
             self._music_on = True
             self._ensure_audio_players()
-            self._scan_if_empty()
-            self._music_btn.setText("🎵♪")
-            self._music_btn.setToolTip(T("スライドショー音楽 OFF"))
+            self._sync_audio_queues()
+            self._update_music_button()
             if self._ss_running():          # 実行中なら今すぐ再生して同期
                 self._start_audio_playback()
                 self._resync_ss()
@@ -6273,6 +7898,7 @@ class FullViewer(QDialog):
         """Arm を外して再生を止める（ビューア終了時）。"""
         self._music_on = False
         self._stop_audio_playback()
+        self._update_music_button()
 
     def _set_volume(self, kind: str, value: int):
         """音量を設定。bgm は 0-100、voice は 0-VOLUME_MAX(既定 400%)。
@@ -6348,6 +7974,341 @@ class FullViewer(QDialog):
         setattr(self, q_attr, newq)
         setattr(self, idx_attr, 0 if cur is not None else i)
 
+    def _hmv_selected_tags(self) -> list[str]:
+        raw = self._audio_cfg("hmv_selected_tags", [])
+        if not isinstance(raw, (list, tuple)):
+            return []
+        return [str(x) for x in raw
+                if isinstance(x, str) and x.split(":", 1)[0] in HMV_TAG_CATEGORIES]
+
+    def _hmv_group_by_tag(self) -> bool:
+        return bool(self._audio_cfg("hmv_group_by_tag", True))
+
+    def _hmv_safety_mode(self) -> str:
+        value = self._audio_cfg("hmv_safety_mode", "all")
+        return value if value in HMV_SAFETY_MODES else "all"
+
+    def _save_hmv_option(self, key: str, value):
+        mw = self.parent()
+        if mw is not None and hasattr(mw, "_cfg"):
+            try:
+                mw._cfg[key] = value
+                save_cfg(mw._cfg)
+            except Exception:
+                pass
+
+    def _refresh_hmv_tag_summary(self):
+        label = getattr(self, "_hmv_tag_summary", None)
+        if label is None:
+            return
+        enabled = bool(self._audio_cfg("hmv_tag_filter", False))
+        selected = self._hmv_selected_tags() if enabled else []
+        mode = self._hmv_safety_mode()
+        mode_text = {
+            "all": T("すべて（未分類を含む）"),
+            "sfw": T("SFWのみ"),
+            "nsfw": T("NSFWのみ"),
+            "both": T("SFW＋NSFWを交互"),
+        }[mode]
+        summary = (T("{0}タグ・{1}枚").format(len(selected), len(self._paths))
+                   if selected else T("選択なし"))
+        label.setText(f"{mode_text} / {summary}")
+
+    def _hmv_filter_active(self) -> bool:
+        return ((bool(self._audio_cfg("hmv_tag_filter", False))
+                 and bool(self._hmv_selected_tags()))
+                or self._hmv_safety_mode() != "all")
+
+    def _hmv_metadata_ready(self) -> bool:
+        mw = self.parent()
+        if getattr(mw, "_preload_complete", False):
+            return True
+        if hasattr(mw, "_all_paths"):
+            return False
+        worker = getattr(mw, "_preload_worker", None) if mw is not None else None
+        if worker is None:
+            return True
+        try:
+            return not worker.isRunning()
+        except RuntimeError:
+            return True
+
+    def _hmv_filter_pending(self) -> bool:
+        return self._hmv_filter_active() and not self._hmv_metadata_ready()
+
+    def _apply_hmv_playlist(self, show_image: bool = True, keep_current: bool = False) -> bool:
+        if self._hmv_filter_pending():
+            self._show_hmv_waiting()
+            self._refresh_hmv_tag_summary()
+            return True
+        enabled = bool(self._audio_cfg("hmv_tag_filter", False))
+        selected = self._hmv_selected_tags() if enabled else []
+        mode = self._hmv_safety_mode()
+        filtering = (enabled and bool(selected)) or mode != "all"
+        current = self._paths[self._idx] if self._paths and 0 <= self._idx < len(self._paths) else None
+        if filtering:
+            playlist = hmv_build_playlist(
+                self._hmv_source_paths, META.snapshot(), selected,
+                self._hmv_group_by_tag(), mode)
+            if not playlist:
+                return False
+        else:
+            playlist = list(self._hmv_source_paths)
+        self._paths = playlist
+        self._seekbar.setRange(0, max(0, len(self._paths) - 1))
+        self._seekbar.setEnabled(True)
+        self._ss_btn.setEnabled(True)
+        if filtering and not keep_current:
+            self._idx = 0
+        else:
+            self._idx = self._paths.index(current) if current in self._paths else 0
+        self._zoom = 1.0
+        self._at_end = False
+        if show_image and self._paths:
+            self._show_image()
+        self._refresh_hmv_tag_summary()
+        return True
+
+    def _sync_hmv_filter_ui(self):
+        for attr, key in (("_hmv_tag_filter", "hmv_tag_filter"),
+                          ("_hmv_group_tags", "hmv_group_by_tag")):
+            widget = getattr(self, attr, None)
+            if widget is not None:
+                widget.blockSignals(True)
+                widget.setChecked(bool(self._audio_cfg(key, attr == "_hmv_group_tags")))
+                widget.blockSignals(False)
+        combo = getattr(self, "_hmv_safety_combo", None)
+        if combo is not None:
+            combo.blockSignals(True)
+            combo.setCurrentIndex(max(0, combo.findData(self._hmv_safety_mode())))
+            combo.blockSignals(False)
+        self._refresh_hmv_tag_summary()
+
+    def _fallback_hmv_filters(self, show_image: bool = True):
+        self._save_hmv_option("hmv_tag_filter", False)
+        self._save_hmv_option("hmv_safety_mode", "all")
+        applied = self._apply_hmv_playlist(show_image=show_image, keep_current=True)
+        self._sync_hmv_filter_ui()
+        return applied
+
+    def _set_hmv_tag_filter(self, enabled: bool):
+        enabled = bool(enabled)
+        if enabled and not self._hmv_selected_tags():
+            self._open_hmv_tag_dialog()
+            return
+        self._save_hmv_option("hmv_tag_filter", enabled)
+        if enabled and not self._apply_hmv_playlist():
+            QMessageBox.information(self, T("HMV"), T("選択したタグに一致する画像がありません。"))
+            self._fallback_hmv_filters()
+        elif not enabled and not self._apply_hmv_playlist():
+            self._fallback_hmv_filters()
+        self._sync_hmv_filter_ui()
+
+    def _add_hmv_tags(self, keys):
+        selected = self._hmv_selected_tags()
+        for key in keys:
+            if isinstance(key, str) and key.split(":", 1)[0] in HMV_TAG_CATEGORIES and key not in selected:
+                selected.append(key)
+        if not selected:
+            return 0
+        self._save_hmv_option("hmv_selected_tags", selected)
+        self._save_hmv_option("hmv_tag_filter", True)
+        checkbox = getattr(self, "_hmv_tag_filter", None)
+        if checkbox is not None:
+            checkbox.setChecked(True)
+        if not self._apply_hmv_playlist(keep_current=True):
+            self._fallback_hmv_filters()
+        self._sync_hmv_filter_ui()
+        return len(selected)
+
+    def _set_hmv_group_by_tag(self, enabled: bool):
+        self._save_hmv_option("hmv_group_by_tag", bool(enabled))
+        if self._hmv_filter_active() and not self._apply_hmv_playlist():
+            self._fallback_hmv_filters()
+        self._sync_hmv_filter_ui()
+
+    def _set_hmv_safety_mode(self, mode: str):
+        mode = mode if mode in HMV_SAFETY_MODES else "all"
+        self._save_hmv_option("hmv_safety_mode", mode)
+        if not self._apply_hmv_playlist():
+            QMessageBox.information(self, T("HMV"), T("選択した条件に一致する画像がありません。"))
+            self._fallback_hmv_filters()
+        self._sync_hmv_filter_ui()
+
+    @staticmethod
+    def _sanitize_hmv_preset(data: dict) -> dict:
+        clean = {}
+        for key, default in HMV_PRESET_DEFAULTS.items():
+            value = data.get(key, default)
+            if key == "ss_anim_pool":
+                clean[key] = [x for x in value if x in ANIM_KINDS] if isinstance(value, (list, tuple)) else list(default)
+            elif key == "hmv_selected_tags":
+                clean[key] = [x for x in value if isinstance(x, str)
+                              and x.split(":", 1)[0] in HMV_TAG_CATEGORIES] if isinstance(value, (list, tuple)) else []
+            elif key == "hmv_safety_mode":
+                clean[key] = value if value in HMV_SAFETY_MODES else default
+            elif key == "ss_anim_type":
+                clean[key] = value if value in tuple(ANIM_KINDS) + ("random",) else default
+            elif isinstance(default, bool):
+                clean[key] = bool(value)
+            elif isinstance(default, int):
+                try:
+                    number = int(value)
+                except (TypeError, ValueError):
+                    number = default
+                if key == "ss_interval_frames":
+                    number = max(1, min(1800, number))
+                elif key == "ss_anim_ms":
+                    number = max(0, min(3000, number))
+                elif key == "ss_bgm_bpm":
+                    number = max(0, min(300, number))
+                elif key == "ss_bgm_beat":
+                    number = number if number in (1, 2, 4, 8, 16) else 4
+                elif key == "ss_anim_pulse_beats":
+                    number = max(1, min(3, number))
+                elif key == "ss_reactive_intensity":
+                    number = max(0, min(100, number))
+                elif key == "ss_reactive_offset_ms":
+                    number = max(-250, min(250, number))
+                clean[key] = number
+            else:
+                try:
+                    number = float(value)
+                except (TypeError, ValueError):
+                    number = float(default)
+                clean[key] = max(0.5, min(2.0, number))
+        return clean
+
+    def _hmv_presets(self) -> dict:
+        raw = self._audio_cfg("hmv_presets", {})
+        return raw if isinstance(raw, dict) else {}
+
+    def _capture_hmv_preset(self) -> dict:
+        mw = self.parent()
+        cfg = getattr(mw, "_cfg", {}) if mw is not None else {}
+        data = {key: cfg.get(key, default) for key, default in HMV_PRESET_DEFAULTS.items()}
+        data["ss_interval_frames"] = self._ss_spin.value()
+        return self._sanitize_hmv_preset(data)
+
+    def _save_hmv_preset(self, name: str) -> bool:
+        name = str(name).strip()[:64]
+        if not name:
+            return False
+        presets = dict(self._hmv_presets())
+        presets[name] = self._capture_hmv_preset()
+        self._save_hmv_option("hmv_presets", presets)
+        self._refresh_hmv_preset_combo(name)
+        return True
+
+    def _apply_hmv_preset(self, name: str) -> bool:
+        preset = self._hmv_presets().get(name)
+        if not isinstance(preset, dict):
+            return False
+        data = self._sanitize_hmv_preset(preset)
+        mw = self.parent()
+        if mw is None or not hasattr(mw, "_cfg"):
+            return False
+        mw._cfg.update(data)
+        try:
+            save_cfg(mw._cfg)
+        except Exception:
+            pass
+        self._ss_spin.setValue(data["ss_interval_frames"])
+        self.apply_audio_settings()
+        if not self._apply_hmv_playlist():
+            QMessageBox.information(self, T("スライドプリセット"), T("選択した条件に一致する画像がありません。"))
+            self._fallback_hmv_filters()
+        self._resync_ss()
+        for attr, key in (("_pop_bgm_speed", "ss_bgm_speed"),
+                          ("_pop_random", "ss_audio_random"),
+                          ("_hmv_tag_filter", "hmv_tag_filter"),
+                          ("_hmv_group_tags", "hmv_group_by_tag")):
+            widget = getattr(self, attr, None)
+            if widget is not None:
+                widget.blockSignals(True)
+                if isinstance(widget, QDoubleSpinBox):
+                    widget.setValue(float(data[key]))
+                elif isinstance(widget, QCheckBox):
+                    widget.setChecked(bool(self._audio_cfg(key, data[key])))
+                widget.blockSignals(False)
+        self._sync_hmv_filter_ui()
+        self._refresh_hmv_preset_combo(name)
+        return True
+
+    def _delete_hmv_preset(self, name: str) -> bool:
+        presets = dict(self._hmv_presets())
+        if name not in presets:
+            return False
+        presets.pop(name)
+        self._save_hmv_option("hmv_presets", presets)
+        self._refresh_hmv_preset_combo()
+        return True
+
+    def _refresh_hmv_preset_combo(self, selected: str = ""):
+        combo = getattr(self, "_hmv_preset_combo", None)
+        if combo is None:
+            return
+        combo.blockSignals(True)
+        combo.clear()
+        for name in sorted(self._hmv_presets()):
+            combo.addItem(name, name)
+        index = combo.findData(selected)
+        combo.setCurrentIndex(index if index >= 0 else (0 if combo.count() else -1))
+        combo.blockSignals(False)
+        has_selection = bool(combo.currentData())
+        for attr in ("_hmv_preset_apply_btn", "_hmv_preset_delete_btn"):
+            button = getattr(self, attr, None)
+            if button is not None:
+                button.setEnabled(has_selection)
+
+    def _save_hmv_preset_dialog(self):
+        current = self._hmv_preset_combo.currentText() if hasattr(self, "_hmv_preset_combo") else ""
+        name, ok = QInputDialog.getText(self, T("スライドプリセット"), T("プリセット名:"), text=current)
+        if ok and name.strip():
+            clean_name = name.strip()[:64]
+            if clean_name in self._hmv_presets():
+                answer = QMessageBox.question(self, T("スライドプリセット"),
+                                              T("プリセット「{0}」を上書きしますか？").format(clean_name))
+                if answer != QMessageBox.StandardButton.Yes:
+                    return
+            self._save_hmv_preset(clean_name)
+
+    def _apply_selected_hmv_preset(self):
+        name = self._hmv_preset_combo.currentData() if hasattr(self, "_hmv_preset_combo") else None
+        if name:
+            self._apply_hmv_preset(str(name))
+
+    def _delete_selected_hmv_preset(self):
+        name = self._hmv_preset_combo.currentData() if hasattr(self, "_hmv_preset_combo") else None
+        if not name:
+            return
+        answer = QMessageBox.question(self, T("スライドプリセット"),
+                                      T("プリセット「{0}」を削除しますか？").format(name))
+        if answer == QMessageBox.StandardButton.Yes:
+            self._delete_hmv_preset(str(name))
+
+    def _open_hmv_tag_dialog(self):
+        popup = getattr(self, "_vol_popup", None)
+        if popup is not None:
+            popup.hide()
+        catalog = hmv_tag_catalog(self._hmv_source_paths, META.snapshot())
+        if not any(catalog.values()):
+            QMessageBox.information(self, T("HMV"), T("プロンプトタグが見つかりません。メタデータの読込を待ってから再試行してください。"))
+            return
+        dlg = HmvTagDialog(self, catalog, self._hmv_selected_tags())
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            selected = dlg.selected_keys()
+            self._save_hmv_option("hmv_selected_tags", selected)
+            self._save_hmv_option("hmv_tag_filter", bool(selected))
+            if not self._apply_hmv_playlist():
+                QMessageBox.information(self, T("HMV"), T("選択したタグに一致する画像がありません。"))
+                self._save_hmv_option("hmv_tag_filter", False)
+                self._apply_hmv_playlist()
+            checkbox = getattr(self, "_hmv_tag_filter", None)
+            if checkbox is not None:
+                checkbox.setChecked(bool(self._audio_cfg("hmv_tag_filter", False)))
+        dlg.deleteLater()
+
     def _get_volume(self, kind: str) -> int:
         return int(self._audio_cfg(f"ss_{kind}_volume", 80 if kind == "bgm" else 100))
 
@@ -6412,6 +8373,18 @@ class FullViewer(QDialog):
         self._pop_bgm_speed.setValue(float(self._audio_cfg("ss_bgm_speed", 1.0)))
         self._pop_voice_speed.setValue(float(self._audio_cfg("ss_voice_speed", 1.0)))
         self._pop_random.setChecked(bool(self._audio_cfg("ss_audio_random", True)))
+        self._hmv_tag_filter.blockSignals(True)
+        self._hmv_tag_filter.setChecked(bool(self._audio_cfg("hmv_tag_filter", False)))
+        self._hmv_tag_filter.blockSignals(False)
+        self._hmv_group_tags.blockSignals(True)
+        self._hmv_group_tags.setChecked(self._hmv_group_by_tag())
+        self._hmv_group_tags.blockSignals(False)
+        self._hmv_safety_combo.blockSignals(True)
+        self._hmv_safety_combo.setCurrentIndex(
+            max(0, self._hmv_safety_combo.findData(self._hmv_safety_mode())))
+        self._hmv_safety_combo.blockSignals(False)
+        self._refresh_hmv_tag_summary()
+        self._refresh_hmv_preset_combo()
         # [v2.32.3] 位置決定前にサイズを確定させ、画面右/下へのはみ出しをクランプ。
         # 🔊 ボタンはツールバー右端にあるため、無補正だとポップアップが画面外に
         # 逃げ、スライダーのノブや速度スピンが見えなかった（v2.32 のバグ）。
@@ -6436,7 +8409,7 @@ class FullViewer(QDialog):
         popup = QFrame(self)
         popup.setWindowFlags(Qt.WindowType.Popup)
         popup.setObjectName("vol_popup")
-        popup.setMinimumWidth(440)
+        popup.setMinimumWidth(480)
         popup.setStyleSheet(
             f"QFrame#vol_popup{{background:{PAL['bg1']};"
             f"border:1px solid {PAL['border']};border-radius:6px;}}"
@@ -6448,6 +8421,9 @@ class FullViewer(QDialog):
         root = QVBoxLayout(popup)
         root.setContentsMargins(10, 8, 10, 10)
         root.setSpacing(6)
+        title = QLabel(T("HMV (Hype Music Video)"))
+        title.setStyleSheet(f"color:{PAL['accent']};font-weight:bold;font-size:11pt;")
+        root.addWidget(title)
 
         # BGM グループ
         bgm_lbl = QLabel(T("BGM"))
@@ -6502,6 +8478,61 @@ class FullViewer(QDialog):
         rand_row.addStretch(1)
         root.addLayout(rand_row)
 
+        tag_box = QGroupBox(T("スライドタグ"))
+        tag_layout = QVBoxLayout(tag_box)
+        tag_row = QHBoxLayout()
+        self._hmv_tag_filter = QCheckBox(T("プロンプトタグで選別"))
+        self._hmv_tag_filter.setChecked(bool(self._audio_cfg("hmv_tag_filter", False)))
+        self._hmv_tag_filter.toggled.connect(self._set_hmv_tag_filter)
+        self._hmv_tag_btn = QPushButton(T("タグを選択..."))
+        self._hmv_tag_btn.clicked.connect(self._open_hmv_tag_dialog)
+        tag_row.addWidget(self._hmv_tag_filter)
+        tag_row.addStretch(1)
+        tag_row.addWidget(self._hmv_tag_btn)
+        tag_layout.addLayout(tag_row)
+        self._hmv_tag_summary = QLabel(T("選択なし"))
+        self._hmv_tag_summary.setStyleSheet(f"color:{PAL['fg3']};font-size:8pt;")
+        tag_layout.addWidget(self._hmv_tag_summary)
+        self._hmv_group_tags = QCheckBox(T("同じタグを3〜6枚の塊で表示"))
+        self._hmv_group_tags.setChecked(self._hmv_group_by_tag())
+        self._hmv_group_tags.toggled.connect(self._set_hmv_group_by_tag)
+        tag_layout.addWidget(self._hmv_group_tags)
+        safety_row = QHBoxLayout()
+        safety_row.addWidget(QLabel(T("安全性フィルター")))
+        self._hmv_safety_combo = QComboBox()
+        for mode, label in (("all", T("すべて（未分類を含む）")),
+                            ("sfw", T("SFWのみ")),
+                            ("nsfw", T("NSFWのみ")),
+                            ("both", T("SFW＋NSFWを交互"))):
+            self._hmv_safety_combo.addItem(label, mode)
+        self._hmv_safety_combo.setCurrentIndex(
+            max(0, self._hmv_safety_combo.findData(self._hmv_safety_mode())))
+        self._hmv_safety_combo.setToolTip(T("右クリックから手動でSFW／NSFWを変更できます。"))
+        self._hmv_safety_combo.currentIndexChanged.connect(
+            lambda index: self._set_hmv_safety_mode(
+                str(self._hmv_safety_combo.itemData(index))))
+        safety_row.addWidget(self._hmv_safety_combo, 1)
+        tag_layout.addLayout(safety_row)
+        self._refresh_hmv_tag_summary()
+        root.addWidget(tag_box)
+
+        preset_box = QGroupBox(T("スライドプリセット"))
+        preset_layout = QHBoxLayout(preset_box)
+        self._hmv_preset_combo = QComboBox()
+        self._hmv_preset_combo.setMinimumWidth(150)
+        preset_layout.addWidget(self._hmv_preset_combo, 1)
+        self._hmv_preset_apply_btn = QPushButton(T("適用"))
+        self._hmv_preset_apply_btn.clicked.connect(self._apply_selected_hmv_preset)
+        self._hmv_preset_save_btn = QPushButton(T("保存"))
+        self._hmv_preset_save_btn.clicked.connect(self._save_hmv_preset_dialog)
+        self._hmv_preset_delete_btn = QPushButton(T("削除"))
+        self._hmv_preset_delete_btn.clicked.connect(self._delete_selected_hmv_preset)
+        preset_layout.addWidget(self._hmv_preset_apply_btn)
+        preset_layout.addWidget(self._hmv_preset_save_btn)
+        preset_layout.addWidget(self._hmv_preset_delete_btn)
+        self._refresh_hmv_preset_combo()
+        root.addWidget(preset_box)
+
         hint = QLabel(T("※ ホットキー: [ ] = BGM ±5%, { } = 音声 ±5%"))
         hint.setStyleSheet(f"color:{PAL['fg3']};font-size:8pt;")
         # [v2.32.3] 英語訳が最も長く、固定幅では末尾が切れる。折り返しを許可。
@@ -6536,6 +8567,7 @@ class FullViewer(QDialog):
     # ── スライドショー ────────────────────────────────────────────────────
     def _on_ss_spin_done(self):
         """フレーム数スピンでの編集完了後、フォーカスをビューアへ戻す。"""
+        self._save_hmv_option("ss_interval_frames", int(self._ss_spin.value()))
         self.setFocus()
 
     def _on_ss_spin_changed(self, _val):
@@ -6565,34 +8597,88 @@ class FullViewer(QDialog):
             return
         path = self._bgm_queue[self._bgm_idx]
         w0 = self._beat_worker
-        if w0 is not None and w0.isRunning():
-            if getattr(w0, "_path", None) == path:
-                # 同じ曲の検出が進行中 → 張り替えず完了を待つ（UI を止めない）
+        if w0 is not None:
+            if w0.isRunning() and getattr(w0, "_path", None) == path:
                 return
-            # 別曲に変わった → 旧 worker は cancel + 終了後自動破棄。待たずに進める。
             w0.cancel()
-            w0.finished.connect(w0.deleteLater)
             self._beat_worker = None
+            if not w0.isRunning():
+                w0.deleteLater()
         self._beat_times = []
         self._beat_slide_times = []
+        self._clear_reactive_features()
         w = _BeatDetectWorker(path, self)
+        w.features_ready.connect(self._on_audio_features_progress)
         w.finished_ok.connect(self._on_beat_detected)
         w.failed.connect(self._on_beat_failed)
+        w.finished.connect(self._on_beat_worker_finished)
+        w.finished.connect(w.deleteLater)
         self._beat_worker = w
         w.start()
 
-    def _on_beat_detected(self, path: str, beats: list):
+    def _on_beat_worker_finished(self):
+        if self.sender() is self._beat_worker:
+            self._beat_worker = None
+
+    def _retire_beat_worker(self):
+        worker = self._beat_worker
+        if worker is None:
+            return
+        self._beat_worker = None
+        worker.cancel()
+        for signal, slot in (
+                (worker.features_ready, self._on_audio_features_progress),
+                (worker.finished_ok, self._on_beat_detected),
+                (worker.failed, self._on_beat_failed),
+                (worker.finished, self._on_beat_worker_finished)):
+            try:
+                signal.disconnect(slot)
+            except (RuntimeError, TypeError):
+                pass
+        if worker.isRunning():
+            worker.setParent(None)
+            _DETACHED_HMV_WORKERS.add(worker)
+            worker.finished.connect(lambda: _DETACHED_HMV_WORKERS.discard(worker))
+        else:
+            worker.deleteLater()
+
+    def _on_audio_features_progress(self, path: str, features):
+        """解析済みの前半だけを先行描画へ渡す。波形同期は最終結果まで待つ。"""
+        cur = self._bgm_queue[self._bgm_idx] if self._bgm_queue else ""
+        sender = self.sender()
+        if path != cur or (sender is not None and sender is not self._beat_worker):
+            return
+        if features is None or len(features) == 0:
+            return
+        existing = self._reactive_features
+        if existing is not None and len(existing) > 0:
+            import numpy as np
+            features = np.concatenate((existing, features), axis=0)
+        self._set_reactive_features(features)
+
+    def _on_beat_detected(self, path: str, beats: list, features=None):
         cur = self._bgm_queue[self._bgm_idx] if self._bgm_queue else ""
         if path != cur:
             return  # 解析中に曲が変わった → 破棄
         self._beat_times = list(beats)
+        if features is not None:
+            self._set_reactive_features(features)
         # SS 実行中かつ波面同期希望なら固定間隔から実ビートへ切り替え
         if self._wavesync_enabled() and self._ss_running():
             self._start_beat_sync()
 
     def _on_beat_failed(self, path: str):
-        # 検出失敗は固定間隔 / BPM 同期のまま継続（追加処理なし）
-        pass
+        cur = self._bgm_queue[self._bgm_idx] if self._bgm_queue else ""
+        sender = self.sender()
+        if path != cur or (sender is not None and sender is not self._beat_worker):
+            return
+        self._clear_reactive_features()
+        self._beat_times = []
+        self._beat_slide_times = []
+        if self._ss_running():
+            self._resync_ss()
+        elif self._hmv_paused or self._wavesync_active:
+            self._stop_beat_sync()
 
     def _start_beat_sync(self) -> bool:
         """実ビート時刻でスライドショーを送り始める。列が無ければ False。"""
@@ -6614,7 +8700,7 @@ class FullViewer(QDialog):
 
     def _schedule_next_beat_slide(self):
         """再生位置に対し次の送り時刻まで one-shot タイマーを張る。"""
-        if not self._wavesync_active or not self._beat_slide_times:
+        if self._hmv_paused or not self._wavesync_active or not self._beat_slide_times:
             return
         if self._bgm_player is None:
             return
@@ -6638,13 +8724,14 @@ class FullViewer(QDialog):
         self._beat_sync_timer.start(max(0, delay))
 
     def _on_beat_slide(self):
-        if not self._wavesync_active:
+        if self._hmv_paused or not self._wavesync_active:
             return
         self._next()
         self._schedule_next_beat_slide()
 
     def _on_bgm_playback_state(self, state):
-        """波面同期中、再生が止まったらタイマーを止め、再開したら再スケジュール。"""
+        """再生状態に応じてリアクティブ描画と波形同期を再開・停止する。"""
+        self._sync_reactive_timer()
         if not self._wavesync_active:
             return
         if state == QMediaPlayer.PlaybackState.PlayingState:
@@ -6653,44 +8740,95 @@ class FullViewer(QDialog):
             self._beat_sync_timer.stop()
 
     def _toggle_ss(self):
-        # [v2.38.1] 連打による多重 start/stop（音声だけ残り FullViewer が落ちる）を防ぐ。
-        # 300ms 未満の連続トグルは無視し、ボタンの見かけを実状態へ戻す。
         import time as _t
         _now = _t.monotonic()
         if _now - getattr(self, "_last_ss_toggle", 0.0) < 0.30:
-            self._ss_btn.setText("⏸ SS" if self._ss_running() else "▶ SS")
+            self._update_hmv_buttons()
             return
         self._last_ss_toggle = _now
         if self._ss_running():
-            if self._ss_job is not None:
-                self._ss_job.stop()
-            self._stop_beat_sync()
-            self._stop_audio_playback()   # [v2.34.1] 音楽もスライドショーに連動して停止
-            self._ss_btn.setText("▶ SS")
+            self._pause_ss()
         else:
             self._start_ss()
 
+    def _pause_ss(self):
+        if not self._ss_running():
+            return
+        self._hmv_paused = True
+        if self._ss_job is not None:
+            self._ss_job.stop()
+        self._pause_audio_playback()
+        self._update_hmv_buttons()
+
+    def _stop_ss(self):
+        self._hmv_paused = False
+        if self._ss_job is not None:
+            self._ss_job.stop()
+        self._stop_beat_sync()
+        self._stop_audio_playback()
+        for player in (self._bgm_player, self._voice_player):
+            if player is not None:
+                try:
+                    player.setPosition(0)
+                except Exception:
+                    pass
+        self._bgm_idx = 0
+        self._voice_idx = 0
+        self._idx = 0
+        self._zoom = 1.0
+        self._at_end = False
+        if self._paths:
+            self._show_image()
+        self._update_hmv_buttons()
+
+    def _finish_hmv_at_end(self):
+        self._hmv_paused = False
+        if self._ss_job is not None:
+            self._ss_job.stop()
+        self._stop_beat_sync()
+        self._stop_audio_playback()
+        self._update_hmv_buttons()
+
+    def _current_ss_interval_ms(self) -> int:
+        beat_ms = self._beat_interval_ms()
+        if beat_ms is not None:
+            return beat_ms
+        return max(16, int(self._ss_spin.value() * 1000 / 60))
+
     def _start_ss(self):
+        if self._hmv_filter_pending():
+            self._show_hmv_waiting()
+            return
+        if self._hmv_paused:
+            self._hmv_paused = False
+            if self._music_on:
+                self._resume_audio_playback()
+            if (self._wavesync_enabled() and self._music_on and self._beat_times
+                    and self._start_beat_sync()):
+                self._update_hmv_buttons()
+                return
+            if self._wavesync_active:
+                self._schedule_next_beat_slide()
+            elif self._ss_job is not None:
+                self._ss_job.start(self._current_ss_interval_ms())
+            self._update_hmv_buttons()
+            return
         if self._ss_job is None:
             self._ss_job = QTimer(self)
             self._ss_job.timeout.connect(self._next)
-        # [v2.34.1] 音楽はスライドショー開始に連動して鳴らす（🎵 が Arm 済みなら）
         if self._music_on:
             self._start_audio_playback()
-        # 波形同期 (v2.33) が最優先。実ビート列があればそれで送る。
+        reactive_enabled = getattr(self, "_reactive_enabled", None)
+        if (self._music_on and reactive_enabled is not None and reactive_enabled()
+                and getattr(self, "_reactive_features", None) is None):
+            self._kick_beat_detect()
         if self._wavesync_enabled() and self._music_on:
             if self._start_beat_sync():
-                self._ss_btn.setText("⏸ SS")
+                self._update_hmv_buttons()
                 return
-        # 拍同期 (v2.29): BGM が有効なら BPM×拍数 で間隔算出、無ければフレーム数固定間隔
         self._stop_beat_sync()
-        beat_ms = self._beat_interval_ms()
-        if beat_ms is not None:
-            interval = beat_ms
-        else:
-            interval = max(16, int(self._ss_spin.value() * 1000 / 60))
-        self._ss_job.start(interval)
-        self._ss_btn.setText("⏸ SS")
+        self._ss_job.start(self._current_ss_interval_ms())
+        self._update_hmv_buttons()
 
     def _resync_ss(self):
         """実行中のスライドショーに現在の拍/BPM/波形同期/再生速度/フレーム数を即時反映。"""
@@ -6785,6 +8923,8 @@ class FullViewer(QDialog):
         mw = self.parent()
         if hasattr(mw, "_remove_path"): mw._remove_path(path)
         self._paths.remove(path)
+        if path in self._hmv_source_paths:
+            self._hmv_source_paths.remove(path)
         if not self._paths: self.close(); return
         self._idx = min(self._idx, len(self._paths)-1)
         self._seekbar.setRange(0, max(0, len(self._paths)-1))
@@ -6809,7 +8949,26 @@ class FullViewer(QDialog):
         new_path = getattr(mw, "_sel_path", old_path)
         if new_path != old_path and old_path in self._paths:
             self._paths[self._idx] = new_path
+            if old_path in self._hmv_source_paths:
+                self._hmv_source_paths[self._hmv_source_paths.index(old_path)] = new_path
             self._show_image()
+
+    def _set_current_safety(self, value: str, path: str | None = None):
+        if not self._paths:
+            return
+        if path is None:
+            if not (0 <= self._idx < len(self._paths)):
+                return
+            path = self._paths[self._idx]
+        if path not in self._paths:
+            return
+        mw = self.parent()
+        if mw is not None and hasattr(mw, "_set_safety_classification"):
+            mw._set_safety_classification([path], value)
+        else:
+            apply_safety_overrides([path], value)
+        if self._paths and path == self._paths[self._idx]:
+            self._refresh_safety_info()
 
     def _on_scene_context_menu(self, pos: QPoint):
         if not self._paths:
@@ -6823,6 +8982,17 @@ class FullViewer(QDialog):
         open_act.setEnabled(False)
         menu.addAction(T("📂 エクスプローラーで選択"), lambda: mw._open_in_explorer(path) if mw and hasattr(mw, "_open_in_explorer") else None)
         menu.addAction(T("📋 パスをコピー"), lambda: mw._copy_path_to_clipboard([path]) if mw and hasattr(mw, "_copy_path_to_clipboard") else None)
+        hmv_menu = menu.addMenu(T("HMVタグに追加"))
+        meta = META.peek(path) or parse_meta(path)
+        entries = hmv_image_tag_entries(meta)
+        if not entries:
+            no_tag = hmv_menu.addAction(T("プロンプトタグが見つかりません"))
+            no_tag.setEnabled(False)
+        else:
+            category_labels = {"act": T("ACT"), "lora": T("作品LoRA"), "tag": T("タグ")}
+            for tag, key, category in entries:
+                hmv_menu.addAction(f"{category_labels[category]}: {tag}",
+                                   lambda _key=key: self._add_hmv_tags([_key]))
         menu.addSeparator()
 
         menu.addAction(T("📋 コピー  Ctrl+C"), lambda: mw._copy_to_clipboard() if mw and hasattr(mw, "_copy_to_clipboard") else None)
@@ -6840,6 +9010,13 @@ class FullViewer(QDialog):
         rate_menu = menu.addMenu(T("★ レーティング"))
         for r, lbl in [(0,T("なし")),(1,"★1"),(2,"★★2"),(3,"★★★3"),(4,"★★★★4"),(5,"★★★★★5")]:
             rate_menu.addAction(lbl, lambda _r=r: mw._rate(path, _r) if mw and hasattr(mw, "_rate") else None)
+        safety_menu = menu.addMenu(T("SFW / NSFW"))
+        current_override = SAFETY_OVERRIDES.get(path, "auto")
+        for value, label in (("auto", T("自動判定")), ("sfw", T("SFW")),
+                             ("nsfw", T("NSFW"))):
+            safety_menu.addAction(
+                ("✓ " if current_override == value else "") + label,
+                lambda _value=value, _path=path: self._set_current_safety(_value, _path))
         menu.addSeparator()
 
         overlay_menu = menu.addMenu(T("🎨 ロゴオーバーレイ"))
@@ -7649,6 +9826,7 @@ def np_median(values: list[int]) -> float:
 BEAT_CACHE_FILE = APP_DIR / "beat_cache.json"
 _beat_cache: dict | None = None
 _beat_cache_lock = threading.Lock()
+_DETACHED_HMV_WORKERS: set = set()
 
 def _load_beat_cache() -> dict:
     global _beat_cache
@@ -7675,10 +9853,180 @@ def _save_beat_cache() -> None:
     except Exception:
         pass
 
+AUDIO_FEATURE_VERSION = 2
+
+
+def _audio_entry_valid(ent, st, sr: int, hop: int, require_features: bool = False) -> bool:
+    if not isinstance(ent, dict):
+        return False
+    if (ent.get("mtime") != st.st_mtime or ent.get("size") != st.st_size
+            or ent.get("sr") != sr or ent.get("hop") != hop):
+        return False
+    if not isinstance(ent.get("beats"), list):
+        return False
+    if require_features:
+        frames = ent.get("feature_frames")
+        if (ent.get("feature_version") != AUDIO_FEATURE_VERSION
+                or not isinstance(frames, int) or frames < 2
+                or not isinstance(ent.get("features"), str)):
+            return False
+    return True
+
+
+def _decode_cached_beats(ent: dict):
+    try:
+        beats = [float(x) for x in ent["beats"]]
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return beats if all(math.isfinite(x) and x >= 0.0 for x in beats) else None
+
+
+def _decode_audio_features(ent: dict):
+    try:
+        import numpy as np
+        frames = int(ent["feature_frames"])
+        raw = zlib.decompress(base64.b64decode(ent["features"].encode("ascii"), validate=True))  # security-check: allow 音声特徴量キャッシュの復号（実行コードではない）
+        if len(raw) != frames * 5 * 4:
+            return None
+        features = np.frombuffer(raw, dtype="<f4").reshape(frames, 5)
+        if not np.isfinite(features).all() or np.any(features < 0.0) or np.any(features > 1.0):
+            return None
+        return features
+    except Exception:
+        return None
+
+
+def _encode_audio_features(features) -> str:
+    import numpy as np
+    raw = np.ascontiguousarray(features, dtype="<f4").tobytes()
+    return base64.b64encode(zlib.compress(raw, 6)).decode("ascii")
+
+
+def _audio_feature_scales(features):
+    """音声特徴量の列ごとの正規化係数を求める。"""
+    import numpy as np
+    values = np.asarray(features, dtype=np.float32)
+    scales = []
+    for col in range(5):
+        percentile = 98.0 if col == 4 else 95.0
+        scale = float(np.percentile(values[:, col], percentile))
+        if not np.isfinite(scale) or scale <= 1e-8:
+            scale = float(np.max(values[:, col]))
+        scales.append(scale if np.isfinite(scale) and scale > 1e-8 else 1.0)
+    return np.asarray(scales, dtype=np.float32)
+
+
+def _normalize_audio_features(features, scales=None):
+    """音声特徴量を0〜1へ正規化。呼び出し側の配列は変更しない。"""
+    import numpy as np
+    normalized = np.array(features, dtype=np.float32, copy=True)
+    if scales is None:
+        scales = _audio_feature_scales(normalized)
+    for col in range(5):
+        scale = float(scales[col])
+        if np.isfinite(scale) and scale > 1e-8:
+            normalized[:, col] = np.clip(normalized[:, col] / scale, 0.0, 1.0)
+    return normalized
+
+
+def _analyze_audio_features(path: str, sr: int, hop: int, win_sec: float, cancelled=None,
+                            progress=None):
+    import librosa
+    import numpy as np
+    dur = float(librosa.get_duration(path=path))
+    if dur <= 0 or (cancelled is not None and cancelled()):
+        return None
+    n_fft = 2048
+    rows = []
+    oenvs = []
+    preview_scales = None
+    offset = 0.0
+    while offset < dur:
+        if cancelled is not None and cancelled():
+            return None
+        y, _ = librosa.load(path, sr=sr, mono=True, offset=offset, duration=win_sec)
+        if cancelled is not None and cancelled():
+            return None
+        if len(y) < sr * 0.5:
+            break
+        power = np.abs(librosa.stft(y=y, n_fft=n_fft, hop_length=hop)) ** 2
+        freqs = librosa.fft_frequencies(sr=sr, n_fft=n_fft)
+        rms = librosa.feature.rms(y=y, frame_length=n_fft, hop_length=hop)[0]
+        low = np.sqrt(np.mean(power[freqs < 180.0], axis=0))
+        mid = np.sqrt(np.mean(power[(freqs >= 180.0) & (freqs < 2500.0)], axis=0))
+        high = np.sqrt(np.mean(power[freqs >= 2500.0], axis=0))
+        onset = librosa.onset.onset_strength(
+            S=librosa.power_to_db(power), sr=sr, hop_length=hop)
+        n = min(len(rms), len(low), len(mid), len(high), len(onset))
+        if n <= 0:
+            offset += win_sec
+            continue
+        chunk = np.column_stack((rms[:n], low[:n], mid[:n], high[:n], onset[:n])).astype(np.float32)
+        rows.append(chunk)
+        oenvs.append(onset[:n].astype(np.float32))
+        # 長い曲でも最初の解析窓が終わり次第、描画を開始できるようにする。
+        # プレビューは最初の窓の係数を共有し、窓間で効果強度が跳ねないようにする。
+        if progress is not None and not (cancelled is not None and cancelled()):
+            if preview_scales is None:
+                preview_scales = _audio_feature_scales(chunk)
+            progress(_normalize_audio_features(chunk, preview_scales))
+        offset += win_sec
+    if not rows:
+        return None
+    features = np.ascontiguousarray(np.concatenate(rows), dtype=np.float32)
+    oenv = np.concatenate(oenvs).astype(np.float32, copy=False)
+    features = _normalize_audio_features(features)
+    if cancelled is not None and cancelled():
+        return None
+    _, beat_frames = librosa.beat.beat_track(onset_envelope=oenv, sr=sr, hop_length=hop)
+    beat_times = librosa.frames_to_time(beat_frames, sr=sr, hop_length=hop)
+    beats = [round(float(t), 3) for t in beat_times]
+    return beats, features
+
+
+def detect_audio_features(path: str, use_cache: bool = True, sr: int = 22050,
+                          hop: int = 512, win_sec: float = 30.0, cancelled=None, progress=None):
+    """ビート時刻と RMS/低中高域/オンセットの正規化済み特徴量を返す。
+
+    progress 指定時は解析窓ごとに正規化済み特徴量を先に通知する。
+    キャッシュヒット時は最終結果のみ返す。
+    """
+    if not HAS_LIBROSA or (cancelled is not None and cancelled()):
+        return None
+    try:
+        st = os.stat(path)
+    except OSError:
+        return None
+    with _beat_cache_lock:
+        ent = _load_beat_cache().get(path)
+        if use_cache and _audio_entry_valid(ent, st, sr, hop, require_features=True):
+            features = _decode_audio_features(ent)
+            beats = _decode_cached_beats(ent)
+            if features is not None and beats is not None:
+                return beats, features
+    try:
+        result = _analyze_audio_features(path, sr, hop, win_sec, cancelled=cancelled,
+                                         progress=progress)
+    except Exception:
+        return None
+    if result is None:
+        return None
+    beats, features = result
+    with _beat_cache_lock:
+        cache = _load_beat_cache()
+        cache[path] = {
+            "mtime": st.st_mtime, "size": st.st_size, "sr": sr, "hop": hop,
+            "beats": beats, "feature_version": AUDIO_FEATURE_VERSION,
+            "feature_frames": int(len(features)),
+            "features": _encode_audio_features(features),
+        }
+        _save_beat_cache()
+    return beats, features
+
+
 def detect_beats(path: str, use_cache: bool = True, sr: int = 22050,
                  hop: int = 512, win_sec: float = 30.0) -> list[float] | None:
-    """曲全体のビート時刻(秒)を検出。戻り値: list[float]、失敗/librosa無しは None。
-    キャッシュは mtime+size+sr+hop が一致すれば再利用。"""
+    """曲全体のビート時刻(秒)を検出。失敗/librosa無しは None。"""
     if not HAS_LIBROSA:
         return None
     try:
@@ -7686,53 +10034,22 @@ def detect_beats(path: str, use_cache: bool = True, sr: int = 22050,
     except OSError:
         return None
     with _beat_cache_lock:
-        cache = _load_beat_cache()
-        if use_cache:
-            ent = cache.get(path)
-            if (ent and ent.get("mtime") == st.st_mtime and ent.get("size") == st.st_size
-                    and ent.get("sr") == sr and ent.get("hop") == hop):
-                bt = ent.get("beats")
-                if isinstance(bt, list) and len(bt) >= 2:
-                    return [float(x) for x in bt]
-    try:
-        import librosa
-        import numpy as np
-        dur = librosa.get_duration(path=path)
-        if dur <= 0:
-            return None
-        oenvs = []
-        offset = 0.0
-        while offset < dur:
-            y, _ = librosa.load(path, sr=sr, mono=True, offset=offset, duration=win_sec)
-            if len(y) < sr * 0.5:
-                break
-            o = librosa.onset.onset_strength(y=y, sr=sr, hop_length=hop)
-            oenvs.append(o.astype(np.float32))
-            offset += win_sec
-        if not oenvs:
-            return None
-        oenv = np.concatenate(oenvs)
-        del oenvs
-        _, beat_frames = librosa.beat.beat_track(onset_envelope=oenv, sr=sr, hop_length=hop)
-        beat_times = librosa.frames_to_time(beat_frames, sr=sr, hop_length=hop)
-        beats = [round(float(t), 3) for t in beat_times]
-    except Exception:
+        ent = _load_beat_cache().get(path)
+        if use_cache and _audio_entry_valid(ent, st, sr, hop):
+            beats = _decode_cached_beats(ent)
+            return beats if beats is not None and len(beats) >= 2 else None
+    result = detect_audio_features(path, use_cache=False, sr=sr, hop=hop, win_sec=win_sec)
+    if result is None:
         return None
-    if len(beats) < 2:
-        return None
-    with _beat_cache_lock:
-        cache = _load_beat_cache()
-        cache[path] = {"mtime": st.st_mtime, "size": st.st_size, "sr": sr,
-                       "hop": hop, "beats": beats}
-        _save_beat_cache()
-    return beats
+    beats = result[0]
+    return beats if len(beats) >= 2 else None
 
 
 class _BeatDetectWorker(QThread):
-    """1曲の全体ビート検出を裏スレッドで。UI を止めない。
-    detect_beats は内部でロック付きキャッシュ更新する。"""
-    finished_ok = Signal(str, list)   # (path, beat_times)
-    failed = Signal(str)              # (path)
+    """1曲のビートと音声特徴量を裏スレッドで解析する。"""
+    finished_ok = Signal(str, list, object)
+    features_ready = Signal(str, object)  # 最終解析を待たずに描画へ渡す部分特徴量
+    failed = Signal(str)
 
     def __init__(self, path: str, parent=None):
         super().__init__(parent)
@@ -7743,23 +10060,109 @@ class _BeatDetectWorker(QThread):
         self._cancelled = True
 
     def run(self):
-        beats = detect_beats(self._path)
+        QThread.currentThread().setPriority(QThread.Priority.LowPriority)
+        result = detect_audio_features(
+            self._path, cancelled=lambda: self._cancelled,
+            progress=lambda features: self.features_ready.emit(self._path, features))
         if self._cancelled:
             return
-        if beats is None:
+        if result is None:
             self.failed.emit(self._path)
         else:
-            self.finished_ok.emit(self._path, beats)
+            self.finished_ok.emit(self._path, result[0], result[1])
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  設定ダイアログ
 # ══════════════════════════════════════════════════════════════════════════════
+class HmvTagDialog(QDialog):
+    def __init__(self, parent, catalog: dict, selected: list[str]):
+        super().__init__(parent)
+        self.setWindowTitle(T("HMV スライドタグ"))
+        self.resize(760, 640)
+        self._catalog = catalog
+        self._selected = set(selected)
+        root = QVBoxLayout(self)
+        note = QLabel(T("プロンプトからタグを選びます。複数選択時は、同じタグの画像を3〜6枚のランダムな塊で表示します。"))
+        note.setWordWrap(True)
+        root.addWidget(note)
+        self._search = QLineEdit()
+        self._search.setPlaceholderText(T("タグを検索..."))
+        self._search.textChanged.connect(self._apply_search)
+        root.addWidget(self._search)
+        self._tree = QTreeWidget()
+        self._tree.setHeaderLabels([T("タグ（画像数）")])
+        self._tree.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        root.addWidget(self._tree, 1)
+        labels = {
+            "act": T("ACT"),
+            "lora": T("作品LoRA"),
+            "tag": T("キャラクター・一般タグ"),
+        }
+        for category in HMV_TAG_CATEGORIES:
+            entries = catalog.get(category, [])
+            if not entries:
+                continue
+            parent_item = QTreeWidgetItem([labels[category]])
+            parent_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
+            self._tree.addTopLevelItem(parent_item)
+            for tag, count, key in entries:
+                item = QTreeWidgetItem([f"{tag}  ({count})"])
+                item.setData(0, Qt.ItemDataRole.UserRole, key)
+                item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
+                              | Qt.ItemFlag.ItemIsUserCheckable)
+                item.setCheckState(0, Qt.CheckState.Checked if key in self._selected
+                                   else Qt.CheckState.Unchecked)
+                parent_item.addChild(item)
+            parent_item.setExpanded(True)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
+                                   | QDialogButtonBox.StandardButton.Cancel)
+        clear_btn = QPushButton(T("選択をクリア"))
+        buttons.addButton(clear_btn, QDialogButtonBox.ButtonRole.ResetRole)
+        clear_btn.clicked.connect(self._clear_selection)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        root.addWidget(buttons)
+
+    def _clear_selection(self):
+        for i in range(self._tree.topLevelItemCount()):
+            parent_item = self._tree.topLevelItem(i)
+            for j in range(parent_item.childCount()):
+                parent_item.child(j).setCheckState(0, Qt.CheckState.Unchecked)
+
+    def _apply_search(self, text: str):
+        query = norm_tag(text)
+        for i in range(self._tree.topLevelItemCount()):
+            parent_item = self._tree.topLevelItem(i)
+            category_match = query in norm_tag(parent_item.text(0))
+            visible = 0
+            for j in range(parent_item.childCount()):
+                child = parent_item.child(j)
+                show = not query or category_match or query in norm_tag(child.text(0))
+                child.setHidden(not show)
+                visible += int(show)
+            parent_item.setHidden(visible == 0)
+
+    def selected_keys(self) -> list[str]:
+        selected: list[str] = []
+        for i in range(self._tree.topLevelItemCount()):
+            parent_item = self._tree.topLevelItem(i)
+            for j in range(parent_item.childCount()):
+                item = parent_item.child(j)
+                if item.checkState(0) == Qt.CheckState.Checked:
+                    selected.append(str(item.data(0, Qt.ItemDataRole.UserRole)))
+        return selected
+
+
 class SettingsDialog(QDialog):
     def __init__(self, parent, cfg: dict, enabled_exts: list, loop_mode: str):
         super().__init__(parent)
         self.setWindowTitle(T("⚙ 環境設定"))
-        self.setMinimumSize(480, 400)
+        self.setMinimumSize(720, 480)
+        screen = self.screen() or QApplication.primaryScreen()
+        sg = screen.availableGeometry()
+        self.resize(max(720, min(1200, int(sg.width() * 0.75))),
+                    max(480, min(820, int(sg.height() * 0.80))))
         self._cfg = dict(cfg)
         self._result_exts = list(enabled_exts)
         self._result_loop = loop_mode
@@ -7800,7 +10203,7 @@ class SettingsDialog(QDialog):
         lg.addWidget(self._rb_loop); lg.addWidget(self._rb_stop)
         l1.addWidget(grp1)
         # ── スライド切替アニメーション (v2.34)
-        grp1b = QGroupBox(T("スライド切替アニメーション"))
+        grp1b = QGroupBox(T("HMV スライド切替アニメーション"))
         fg = QFormLayout(grp1b)
         self._ss_anim_enabled = QCheckBox(T("スライド送り時にアニメーションを再生"))
         self._ss_anim_enabled.setChecked(bool(self._cfg.get("ss_anim_enabled", False)))
@@ -7823,7 +10226,8 @@ class SettingsDialog(QDialog):
             _pool_raw = list(ANIM_DEFAULT_POOL)
         _pool_sel = [k for k in _pool_raw if k in ANIM_KINDS]
         self._ss_anim_pool_boxes = {}
-        _pool_widget = QWidget()
+        self._ss_anim_pool_widget = QWidget()
+        _pool_widget = self._ss_anim_pool_widget
         _pg = QGridLayout(_pool_widget)
         _pg.setContentsMargins(0, 0, 0, 0)
         _pg.setHorizontalSpacing(14)
@@ -7838,7 +10242,10 @@ class SettingsDialog(QDialog):
             _cb.setChecked(_k in _pool_sel)
             _pg.addWidget(_cb, _i // 2, _i % 2)
             self._ss_anim_pool_boxes[_k] = _cb
-        fg.addRow(T("ランダムで使う種類:"), _pool_widget)
+        self._ss_anim_pool_label = QLabel(T("ランダムで使う種類:"))
+        fg.addRow(self._ss_anim_pool_label, _pool_widget)
+        self._ss_anim_type.currentIndexChanged.connect(self._sync_anim_pool_enabled)
+        self._sync_anim_pool_enabled()
         self._ss_anim_ms = QSpinBox()
         self._ss_anim_ms.setRange(0, 3000)
         self._ss_anim_ms.setSingleStep(50)
@@ -7881,6 +10288,7 @@ class SettingsDialog(QDialog):
 
         # ── タブ3: LoRA
         t3 = QWidget(); l3 = QFormLayout(t3)
+        self._lora_tab_widget = t3
         self._lora_edit = QLineEdit(self._cfg.get("lora_folder",""))
         browse_btn = QPushButton(T("参照..."))
         browse_btn.clicked.connect(self._browse_lora)
@@ -7913,11 +10321,12 @@ class SettingsDialog(QDialog):
 
         # ── タブ6: スライドショー音楽 (v2.29)
         t6 = QWidget(); l6 = QVBoxLayout(t6)
+        self._music_tab_widget = t6
         if not HAS_MULTIMEDIA:
             warn = QLabel(T("⚠ PySide6.QtMultimedia が無いため音楽再生は無効です"))
             warn.setStyleSheet(f"color:{PAL['red']};")
             l6.addWidget(warn); l6.addStretch()
-            tabs.addTab(t6, T("🎵 音楽"))
+            tabs.addTab(t6, T("🎵 HMV"))
         else:
             # BGM グループ
             bgm_grp = QGroupBox(T("BGM（拍同期の基準）"))
@@ -7927,9 +10336,13 @@ class SettingsDialog(QDialog):
             bgm_browse.clicked.connect(self._browse_ss_bgm)
             bgm_row = QHBoxLayout(); bgm_row.addWidget(self._ss_bgm_edit, 1); bgm_row.addWidget(bgm_browse)
             bgm_form.addRow(T("BGMフォルダ:"), bgm_row)
-            self._ss_bgm_enabled = QCheckBox(T("スライドショー時に再生"))
+            self._ss_bgm_enabled = QCheckBox(T("HMV実行時に再生"))
             self._ss_bgm_enabled.setChecked(bool(self._cfg.get("ss_bgm_enabled", False)))
             bgm_form.addRow(self._ss_bgm_enabled)
+            self._ss_audio_random = QCheckBox(T("曲をランダム再生"))
+            self._ss_audio_random.setChecked(bool(self._cfg.get("ss_audio_random", True)))
+            self._ss_audio_random.setToolTip(T("ON: シャッフル順 / OFF: ファイル名順で再生"))
+            bgm_form.addRow(self._ss_audio_random)
             self._ss_bgm_speed = QDoubleSpinBox()
             self._ss_bgm_speed.setRange(0.5, 2.0); self._ss_bgm_speed.setSingleStep(0.05)
             self._ss_bgm_speed.setDecimals(2)
@@ -7973,6 +10386,58 @@ class SettingsDialog(QDialog):
             bgm_form.addRow(self._ss_bgm_wavesync)
             l6.addWidget(bgm_grp)
 
+            reactive_grp = QGroupBox(T("音声リアクティブ効果（EDM）"))
+            reactive_form = QFormLayout(reactive_grp)
+            self._ss_reactive_enabled = QCheckBox(T("音声に合わせて画像を変化"))
+            self._ss_reactive_enabled.setChecked(bool(self._cfg.get("ss_reactive_enabled", False)))
+            self._ss_reactive_enabled.setToolTip(T("初回解析は曲全体を読みます。完了までは従来のスライド動作を継続します。"))
+            if not HAS_LIBROSA:
+                self._ss_reactive_enabled.setEnabled(False)
+                self._ss_reactive_enabled.setToolTip(T("librosa が未導入のため音声リアクティブ効果は無効です"))
+            reactive_form.addRow(self._ss_reactive_enabled)
+            self._ss_reactive_intensity = QSpinBox()
+            self._ss_reactive_intensity.setRange(0, 100)
+            self._ss_reactive_intensity.setSuffix(" %")
+            self._ss_reactive_intensity.setValue(int(self._cfg.get("ss_reactive_intensity", 65)))
+            reactive_form.addRow(T("効果の強さ:"), self._ss_reactive_intensity)
+            self._ss_reactive_edm = QCheckBox(T("EDM強化（拍ズーム・輪郭・波紋・粒子）"))
+            self._ss_reactive_edm.setChecked(bool(self._cfg.get("ss_reactive_edm", True)))
+            reactive_form.addRow(self._ss_reactive_edm)
+            self._ss_reactive_boxes = {}
+            reactive_widget = QWidget()
+            reactive_grid = QGridLayout(reactive_widget)
+            reactive_grid.setContentsMargins(0, 0, 0, 0)
+            reactive_grid.setHorizontalSpacing(14)
+            reactive_grid.setVerticalSpacing(2)
+            reactive_options = (
+                ("ss_reactive_outline", "輪郭パルス", True),
+                ("ss_reactive_zoom", "拍ズーム", True),
+                ("ss_reactive_ripple", "波紋", True),
+                ("ss_reactive_glow", "発光", True),
+                ("ss_reactive_particles", "パーティクル", True),
+                ("ss_reactive_flash", "フラッシュ（点滅に注意）", False),
+            )
+            for i, (key, label, default) in enumerate(reactive_options):
+                cb = QCheckBox(T(label))
+                cb.setChecked(bool(self._cfg.get(key, default)))
+                reactive_grid.addWidget(cb, i // 2, i % 2)
+                self._ss_reactive_boxes[key] = cb
+            reactive_form.addRow(T("効果:"), reactive_widget)
+            self._ss_reactive_flash_safe = QCheckBox(T("フラッシュを抑える"))
+            self._ss_reactive_flash_safe.setChecked(bool(self._cfg.get("ss_reactive_flash_safe", True)))
+            reactive_form.addRow(self._ss_reactive_flash_safe)
+            self._ss_reactive_offset_ms = QSpinBox()
+            self._ss_reactive_offset_ms.setRange(-250, 250)
+            self._ss_reactive_offset_ms.setSingleStep(10)
+            self._ss_reactive_offset_ms.setSuffix(" ms")
+            self._ss_reactive_offset_ms.setValue(int(self._cfg.get("ss_reactive_offset_ms", 0)))
+            reactive_form.addRow(T("同期オフセット:"), self._ss_reactive_offset_ms)
+            reactive_note = QLabel(T("輪郭パルスはスライド切替のパルスとは別の効果です。"))
+            reactive_note.setWordWrap(True)
+            reactive_note.setStyleSheet(f"color:{PAL['fg3']};font-size:8pt;")
+            reactive_form.addRow(reactive_note)
+            l6.addWidget(reactive_grp)
+
             # 音声・セリフ グループ
             voice_grp = QGroupBox(T("音声・セリフ（拍同期なし、独立再生）"))
             voice_form = QFormLayout(voice_grp)
@@ -7981,7 +10446,7 @@ class SettingsDialog(QDialog):
             voice_browse.clicked.connect(self._browse_ss_voice)
             voice_row = QHBoxLayout(); voice_row.addWidget(self._ss_voice_edit, 1); voice_row.addWidget(voice_browse)
             voice_form.addRow(T("音声フォルダ:"), voice_row)
-            self._ss_voice_enabled = QCheckBox(T("スライドショー時に再生"))
+            self._ss_voice_enabled = QCheckBox(T("HMV実行時に再生"))
             self._ss_voice_enabled.setChecked(bool(self._cfg.get("ss_voice_enabled", False)))
             voice_form.addRow(self._ss_voice_enabled)
             self._ss_voice_speed = QDoubleSpinBox()
@@ -7991,16 +10456,30 @@ class SettingsDialog(QDialog):
             voice_form.addRow(T("再生速度:"), self._ss_voice_speed)
             l6.addWidget(voice_grp)
 
-            note = QLabel(T("※ フォルダ内の .mp3/.wav/.flac/.ogg/.m4a をランダム順でループ再生。拍同期は BGM の BPM のみ基準。"))
+            note = QLabel(T("※ フォルダ内の .mp3/.wav/.flac/.ogg/.m4a をHMV曲順でループ再生。拍同期は BGM の BPM のみ基準。"))
             note.setWordWrap(True)
             note.setStyleSheet(f"color:{PAL['fg3']};")
             l6.addWidget(note)
-            vol_note = QLabel(T("※ 音量はスライドショー中の 🔊 ボタン（ポップアップ）で調整します。"))
+            vol_note = QLabel(T("※ 音量・速度・曲順・スライドタグはHMV中の 🔊 ボタン（ポップアップ）で調整します。"))
             vol_note.setWordWrap(True)
             vol_note.setStyleSheet(f"color:{PAL['fg3']};")
             l6.addWidget(vol_note)
             l6.addStretch()
-            tabs.addTab(t6, T("🎵 音楽"))
+            music_scroll = QScrollArea()
+            music_scroll.setWidgetResizable(True)
+            music_scroll.setFrameShape(QFrame.Shape.NoFrame)
+            music_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            music_scroll.setWidget(t6)
+            self._music_tab_widget = music_scroll
+            tabs.addTab(music_scroll, T("🎵 HMV"))
+
+        for index, widget in enumerate((self._music_tab_widget, t1, t3, t2, t4, t5, t0)):
+            current = tabs.indexOf(widget)
+            if current < 0:
+                continue
+            text = tabs.tabText(current)
+            tabs.removeTab(current)
+            tabs.insertTab(index, widget, text)
 
         root.addWidget(tabs)
 
@@ -8011,6 +10490,25 @@ class SettingsDialog(QDialog):
         cancel_btn = QPushButton(T("キャンセル")); cancel_btn.clicked.connect(self.reject)
         bf.addWidget(cancel_btn); bf.addWidget(ok_btn)
         root.addLayout(bf)
+        for spin in self.findChildren(QSpinBox) + self.findChildren(QDoubleSpinBox):
+            spin.installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        if (event.type() == QEvent.Type.Wheel
+                and isinstance(obj, (QSpinBox, QDoubleSpinBox))):
+            parent = obj.parentWidget()
+            scroll = None
+            while parent is not None:
+                if isinstance(parent, QScrollArea):
+                    scroll = parent
+                    break
+                parent = parent.parentWidget()
+            if scroll is not None:
+                bar = scroll.verticalScrollBar()
+                steps = int(event.angleDelta().y() / 120)
+                bar.setValue(bar.value() - steps * bar.singleStep() * 3)
+            return True
+        return super().eventFilter(obj, event)
 
     def _browse_lora(self):
         p = QFileDialog.getExistingDirectory(self, T("LoRAフォルダを選択"))
@@ -8094,6 +10592,13 @@ class SettingsDialog(QDialog):
         clear_cache()
         QMessageBox.information(self, T("完了"), T("サムネキャッシュを削除しました"))
 
+    def _sync_anim_pool_enabled(self):
+        enabled = self._ss_anim_type.currentData() == "random"
+        self._ss_anim_pool_widget.setEnabled(enabled)
+        self._ss_anim_pool_label.setEnabled(enabled)
+        self._ss_anim_pool_widget.setToolTip(
+            T("ランダム選択時のみ有効です。チェックした種類だけを使います。"))
+
     def _save(self):
         # [v2.30] BPM 解析ワーカが動いていれば止めてから保存
         if self._bpm_worker is not None and self._bpm_worker.isRunning():
@@ -8110,11 +10615,19 @@ class SettingsDialog(QDialog):
         if HAS_MULTIMEDIA and hasattr(self, "_ss_bgm_edit"):
             self._cfg["ss_bgm_folder"]   = self._ss_bgm_edit.text().strip()
             self._cfg["ss_bgm_enabled"]  = bool(self._ss_bgm_enabled.isChecked())
+            self._cfg["ss_audio_random"] = bool(self._ss_audio_random.isChecked())
             self._cfg["ss_bgm_speed"]    = float(self._ss_bgm_speed.value())
             self._cfg["ss_bgm_bpm"]      = int(self._ss_bgm_bpm.value())
             self._cfg["ss_bgm_beat"]     = int(self._ss_bgm_beat.currentData())
             if hasattr(self, "_ss_bgm_wavesync"):
                 self._cfg["ss_bgm_wavesync"] = bool(self._ss_bgm_wavesync.isChecked())
+            self._cfg["ss_reactive_enabled"] = bool(self._ss_reactive_enabled.isChecked())
+            self._cfg["ss_reactive_intensity"] = int(self._ss_reactive_intensity.value())
+            self._cfg["ss_reactive_edm"] = bool(self._ss_reactive_edm.isChecked())
+            for key, cb in self._ss_reactive_boxes.items():
+                self._cfg[key] = bool(cb.isChecked())
+            self._cfg["ss_reactive_flash_safe"] = bool(self._ss_reactive_flash_safe.isChecked())
+            self._cfg["ss_reactive_offset_ms"] = int(self._ss_reactive_offset_ms.value())
             self._cfg["ss_voice_folder"] = self._ss_voice_edit.text().strip()
             self._cfg["ss_voice_enabled"]  = bool(self._ss_voice_enabled.isChecked())
             self._cfg["ss_voice_speed"]    = float(self._ss_voice_speed.value())
@@ -8123,22 +10636,27 @@ class SettingsDialog(QDialog):
             self._cfg["ss_anim_type"]    = str(self._ss_anim_type.currentData())
             self._cfg["ss_anim_ms"]      = int(self._ss_anim_ms.value())
         if hasattr(self, "_ss_anim_pool_boxes"):
-            self._cfg["ss_anim_pool"] = [
+            selected_pool = [
                 k for k in ANIM_KINDS if self._ss_anim_pool_boxes[k].isChecked()]
+            if self._cfg.get("ss_anim_type") == "random" and not selected_pool:
+                QMessageBox.warning(self, T("HMV スライド切替アニメーション"),
+                                    T("ランダムで使う種類を1つ以上チェックしてください。"))
+                self._ss_anim_pool_widget.setFocus()
+                return
+            self._cfg["ss_anim_pool"] = selected_pool
         if hasattr(self, "_ss_anim_pulse_beats"):
             self._cfg["ss_anim_pulse_beats"] = int(self._ss_anim_pulse_beats.currentData())
         self.accept()
 
     def focus_lora_tab(self):
         """LoRAタブを前面に出し、フォルダ入力欄にフォーカスを当てる。"""
-        # LoRAタブはインデックス3（言語=0, FullViewer=1, 拡張子=2, LoRA=3, キャッシュ=4）
-        self._tabs.setCurrentIndex(3)
+        self._tabs.setCurrentIndex(self._tabs.indexOf(self._lora_tab_widget))
         self._lora_edit.setFocus()
         self._lora_edit.selectAll()
 
     def focus_music_tab(self):
-        """🎵 音楽タブを前面に出す（インデックス6: 言語/FullViewer/拡張子/LoRA/ロゴ/キャッシュ/音楽）。"""
-        self._tabs.setCurrentIndex(self._tabs.count() - 1)
+        """🎵 HMVタブを前面に出す。"""
+        self._tabs.setCurrentIndex(self._tabs.indexOf(self._music_tab_widget))
         if hasattr(self, "_ss_bgm_edit"):
             self._ss_bgm_edit.setFocus()
 
@@ -8154,6 +10672,7 @@ class MetaPanel(QWidget):
     """
     tag_search_requested   = Signal(str)
     model_search_requested = Signal(str)   # モデル名クリック → model_cb に反映
+    hmv_tag_add_requested  = Signal(str)
     # ⚠ 削除禁止: コピー操作後にステータスバーへメッセージを通知するシグナル（v1.79実装）。
     # _copy_pos / _copy_neg / _copy_seed / seed_lbl.mousePressEvent から emit される。
     # MainWindow._build_right_panel で self._set_status に接続される。
@@ -8443,6 +10962,8 @@ class MetaPanel(QWidget):
             f"background:{PAL['bg3']};color:{PAL['pos_fg']};"
             f"border:1px solid {PAL['border']};border-radius:4px;font-size:8pt;")
         self._txt_pos.setAcceptRichText(False)
+        self._txt_pos.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._txt_pos.customContextMenuRequested.connect(self._show_prompt_context_menu)
         sec2_layout.addWidget(self._txt_pos, 1)
         p1l.addWidget(sec2_content, 1)
         vsplit.addWidget(pane1)
@@ -8535,6 +11056,19 @@ class MetaPanel(QWidget):
         bf.addStretch()
         bf.addWidget(self._save_btn)
         outer.addWidget(btn_bar)
+
+    def _show_prompt_context_menu(self, pos):
+        cursor = self._txt_pos.textCursor()
+        if not cursor.hasSelection():
+            cursor = self._txt_pos.cursorForPosition(pos)
+            cursor.select(QTextCursor.SelectionType.WordUnderCursor)
+        keys = hmv_keys_from_prompt(cursor.selectedText())
+        menu = self._txt_pos.createStandardContextMenu()
+        if keys:
+            label = T("HMVタグに追加") if len(keys) == 1 else T("選択した{0}件をHMVタグに追加").format(len(keys))
+            action = menu.addAction(label)
+            action.triggered.connect(lambda: self.hmv_tag_add_requested.emit(",".join(keys)))
+        menu.exec(self._txt_pos.mapToGlobal(pos))
 
     def show_loading(self, path: str):
         """キャッシュミス時に即呼ぶ。ファイル名だけ表示してメタ欄をクリア（v1.81）。"""
@@ -8941,6 +11475,7 @@ class MainWindow(QMainWindow):
         self._quality_ai_worker = None
         self._similar_worker = None
         self._preload_worker: PreloadWorker | None = None
+        self._preload_complete = False
         self._filter_worker:  FilterWorker | None = None
         self._tag_worker:     TagCountWorker | None = None
         self._model_worker:   ModelListWorker | None = None
@@ -9014,6 +11549,7 @@ class MainWindow(QMainWindow):
         super().resizeEvent(e)
         if hasattr(self, "_toolbar_reflow_timer"):
             self._toolbar_reflow_timer.start()
+        self._position_quick_menu()
 
     # ══ UI構築 ════════════════════════════════════════════════════════════
     def _build_ui(self):
@@ -9093,6 +11629,7 @@ class MainWindow(QMainWindow):
         top_shell_l.addWidget(self._left_sidebar_widget)
         top_shell_l.addWidget(splitter, 1)
         top_shell_l.addWidget(self._right_sidebar_widget)
+        self._build_quick_menu(top_shell)
         for handle_idx, side in ((1, "left"), (2, "right")):
             handle = splitter.handle(handle_idx)
             if handle is not None:
@@ -9181,6 +11718,88 @@ class MainWindow(QMainWindow):
         # レイアウト復元は __init__ 末尾（_restore_geometry 後）で行う
         # ここでは何もしない
 
+    def _build_quick_menu(self, parent):
+        self._quick_menu_parent = parent
+        parent.installEventFilter(self)
+        self._quick_menu = QWidget(parent)
+        self._quick_menu.setObjectName("quick_menu")
+        self._quick_menu.setFixedWidth(260)
+        self._quick_menu.setStyleSheet(
+            f"QWidget#quick_menu{{background:{PAL['bg1']};border-right:1px solid {PAL['border']};}}"
+            f"QPushButton{{background:{PAL['bg3']};color:{PAL['fg1']};border:1px solid {PAL['border']};"
+            f"border-radius:4px;padding:7px 10px;text-align:left;}}"
+            f"QPushButton:hover{{background:{PAL['bg4']};color:{PAL['fg0']};}}")
+        root = QVBoxLayout(self._quick_menu)
+        root.setContentsMargins(10, 10, 10, 10)
+        root.setSpacing(6)
+        header = QHBoxLayout()
+        title = QLabel(T("クイックメニュー"))
+        title.setStyleSheet(f"color:{PAL['fg0']};font-weight:bold;")
+        header.addWidget(title, 1)
+        close_btn = QPushButton("×")
+        close_btn.setFixedSize(28, 28)
+        close_btn.setToolTip(T("閉じる"))
+        close_btn.clicked.connect(lambda: self._toggle_quick_menu(False))
+        header.addWidget(close_btn)
+        root.addLayout(header)
+
+        def action(text, slot, hide=True):
+            button = QPushButton(text)
+            if hide:
+                button.clicked.connect(lambda: (slot(), self._toggle_quick_menu(False)))
+            else:
+                button.clicked.connect(slot)
+            root.addWidget(button)
+            return button
+
+        action(T("全画面ビューアを開く"), lambda: self._open_full(self._sel_path) if self._sel_path else None)
+        action(T("HMV設定"), lambda: self._open_settings("music"))
+        action(T("環境設定"), self._open_settings)
+        root.addSpacing(4)
+        self._quick_folder_btn = action(T("フォルダパネルを開閉"),
+                                        lambda: self._toggle_left_panel(not self._left_panel_visible), False)
+        self._quick_meta_btn = action(T("メタパネルを開閉"),
+                                      lambda: self._toggle_right_panel(not self._right_panel_visible), False)
+        self._quick_console_btn = action(T("アクティビティログを開閉"),
+                                         lambda: self._set_console_visible(not self._cfg.get("console_visible", False)), False)
+        root.addSpacing(4)
+        layout_label = QLabel(T("表示レイアウト"))
+        layout_label.setStyleSheet(f"color:{PAL['fg3']};font-size:8pt;")
+        root.addWidget(layout_label)
+        layout_row = QHBoxLayout()
+        for layout_id, label in (("A", T("右")), ("B", T("左")), ("C", T("右大")),
+                                 ("D", T("上")), ("E", T("全"))):
+            button = QPushButton(f"{layout_id} {label}")
+            button.clicked.connect(lambda _checked=False, lid=layout_id:
+                                   (self._switch_layout(lid), self._toggle_quick_menu(False)))
+            layout_row.addWidget(button)
+        root.addLayout(layout_row)
+        root.addStretch()
+        self._quick_menu.hide()
+
+    def _position_quick_menu(self):
+        menu = getattr(self, "_quick_menu", None)
+        parent = getattr(self, "_main_container", None)
+        if menu is None or parent is None:
+            return
+        menu.setGeometry(22, 0, 260, max(1, menu.parentWidget().height()))
+
+    def _toggle_quick_menu(self, visible: bool):
+        menu = getattr(self, "_quick_menu", None)
+        if menu is None:
+            return
+        visible = bool(visible)
+        menu.setVisible(visible)
+        if visible:
+            self._position_quick_menu()
+            menu.raise_()
+        for attr in ("_quick_menu_btn", "_toggle_quick_menu_action"):
+            widget = getattr(self, attr, None)
+            if widget is not None:
+                widget.blockSignals(True)
+                widget.setChecked(visible)
+                widget.blockSignals(False)
+
     def _build_menubar(self):
         mb = self.menuBar()
 
@@ -9217,6 +11836,10 @@ class MainWindow(QMainWindow):
         self._toggle_console_action.setCheckable(True)
         self._toggle_console_action.setChecked(self._cfg.get("console_visible", False))
         self._toggle_console_action.toggled.connect(self._set_console_visible)
+        self._toggle_quick_menu_action = vm.addAction(T("クイックメニューを表示"))
+        self._toggle_quick_menu_action.setCheckable(True)
+        self._toggle_quick_menu_action.setChecked(False)
+        self._toggle_quick_menu_action.toggled.connect(self._toggle_quick_menu)
         self._toggle_ruler_action = vm.addAction(T("📏 位置ルーラーを表示"))
         self._toggle_ruler_action.setCheckable(True)
         self._toggle_ruler_action.setChecked(self._cfg.get("scroll_ruler_visible", True))
@@ -10264,6 +12887,16 @@ class MainWindow(QMainWindow):
             f"QPushButton:hover{{background:{PAL['bg3']};color:{PAL['fg0']};}}"
             f"QPushButton:checked{{color:{PAL['accent']};}}")
         sb_layout.addWidget(self._left_collapse_btn)
+        self._quick_menu_btn = QPushButton("☰")
+        self._quick_menu_btn.setFixedSize(22, 44)
+        self._quick_menu_btn.setCheckable(True)
+        self._quick_menu_btn.setToolTip(T("クイックメニューを開閉"))
+        self._quick_menu_btn.setStyleSheet(
+            f"QPushButton{{background:{PAL['bg2']};color:{PAL['fg3']};"
+            f"border:none;border-radius:0;font-size:14px;padding:0;}}"
+            f"QPushButton:hover{{background:{PAL['bg3']};color:{PAL['fg0']};}}"
+            f"QPushButton:checked{{color:{PAL['accent']};}}")
+        sb_layout.addWidget(self._quick_menu_btn)
         sb_layout.addStretch()
 
         # 左パネル本体は「お気に入り + フォルダツリー」だけを持つ
@@ -10409,6 +13042,7 @@ class MainWindow(QMainWindow):
 
         # 縦バーボタンのクリック → _toggle_left_panel を直接呼ぶ
         self._left_collapse_btn.clicked.connect(self._toggle_left_panel)
+        self._quick_menu_btn.clicked.connect(self._toggle_quick_menu)
 
         return outer
 
@@ -10545,6 +13179,7 @@ class MainWindow(QMainWindow):
         self._meta_panel = MetaPanel(cfg=self._cfg)
         self._meta_panel.tag_search_requested.connect(self._set_tag_search)
         self._meta_panel.model_search_requested.connect(self._set_model_search)
+        self._meta_panel.hmv_tag_add_requested.connect(self._add_hmv_tags)
         self._meta_panel.lineage_set_requested.connect(self._set_model_lineage)   # [v2.36] 系統の手動タグ付け
         # ⚠ 削除禁止: MetaPanel のコピー操作後メッセージをステータスバーに表示する接続（v1.79実装）。
         # この connect を削除すると Positive/Negative/Seed のコピーボタン押下後に
@@ -10780,6 +13415,9 @@ class MainWindow(QMainWindow):
 
     def eventFilter(self, obj, event):
         """検索欄の履歴キーハンドリング + splitter ハンドル押下/解放の検知。"""
+        if obj is getattr(self, "_quick_menu_parent", None) and event.type() == QEvent.Type.Resize:
+            self._position_quick_menu()
+            return super().eventFilter(obj, event)
         # ── 検索履歴 (v2.10): 検索欄の ↑/↓ で履歴をたどる ────────────────
         if obj is getattr(self, "_search_edit", None):
             if event.type() == QEvent.Type.KeyPress:
@@ -11010,6 +13648,7 @@ class MainWindow(QMainWindow):
         self._retire_worker(self._filter_worker);  self._filter_worker  = None
         self._retire_worker(self._preload_worker); self._preload_worker = None
         self._retire_worker(self._model_worker);   self._model_worker   = None
+        self._preload_complete = False
 
         # スキャン開始
         import time as _time_mod
@@ -11080,6 +13719,7 @@ class MainWindow(QMainWindow):
                 QTimer.singleShot(100, _do_select)
 
         # 先読みワーカー起動
+        self._preload_complete = False
         self._preload_worker = PreloadWorker(files, stats=self._scan_stats)
         self._preload_worker.progress.connect(self._on_preload_progress)
         self._preload_worker.done.connect(self._on_preload_done)
@@ -11112,12 +13752,19 @@ class MainWindow(QMainWindow):
     def _on_preload_done(self):
         if self._quality_ai_worker is not None:
             return
+        self._preload_complete = True
         self._set_status(T("メタ読込完了"), 100)
         self._log(T("メタデータ先読み完了"), _ConsolePanel.LEVEL_OK)
         self._update_model_list()
         # サムネイルの系統バッジを再描画（META キャッシュが揃ったので初めて正確になる）
         if hasattr(self, "_grid") and hasattr(self._grid, "_refresh_cell_badges"):
             self._grid._refresh_cell_badges()
+        viewer = getattr(self, "_full_viewer", None)
+        if viewer is not None and viewer.isVisible():
+            if viewer._hmv_filter_active():
+                if not viewer._apply_hmv_playlist(keep_current=True):
+                    viewer._fallback_hmv_filters()
+            viewer._refresh_safety_info()
         # メタデータが全件揃った状態でフィルターを再適用する。
         # サブフォルダ読み込み等でファイル数が多い場合、_apply_filter() は
         # PreloadWorker 完了前（META キャッシュが不完全な段階）に走ることがある。
@@ -11422,6 +14069,7 @@ class MainWindow(QMainWindow):
         status = T("AI画像評価をキャンセルしました") if cancelled else T("AI画像評価が完了しました")
         self._set_status(status, 100)
         if self._preload_worker is None and self._all_paths:
+            self._preload_complete = False
             self._preload_worker = PreloadWorker(self._all_paths, stats=self._scan_stats)
             self._preload_worker.progress.connect(self._on_preload_progress)
             self._preload_worker.done.connect(self._on_preload_done)
@@ -11437,6 +14085,12 @@ class MainWindow(QMainWindow):
         self._quality_ai_worker = None
         short = (message or "").splitlines()[0][:120] if message else T("不明なエラー")
         self._set_status(f"{Te('AI画像評価エラー: ')}{short}")
+        if self._preload_worker is None and self._all_paths:
+            self._preload_complete = False
+            self._preload_worker = PreloadWorker(self._all_paths, stats=self._scan_stats)
+            self._preload_worker.progress.connect(self._on_preload_progress)
+            self._preload_worker.done.connect(self._on_preload_done)
+            self._preload_worker.start()
         QMessageBox.critical(self, T("AI画像評価"), message)
 
     def _set_model_lineage(self, model, fam) -> None:
@@ -11602,11 +14256,9 @@ class MainWindow(QMainWindow):
     @Slot(str)
     def _sel_image(self, path: str, keep_multi: bool = False):
         self._sel_path = path
-        if keep_multi:
-            # Ctrl/Shift クリック時はセル色だけ更新（multi_sel を壊さない）
-            self._grid._refresh_cell_colors()
-        else:
+        if self._grid._selected != path:
             self._grid.highlight_multi(path)
+        if not keep_multi and self._grid._multi_sel:
             self._grid._multi_sel.clear()
             self._grid._refresh_cell_colors()
             self._grid.sel_changed.emit(self._grid._multi_sel)
@@ -11651,10 +14303,17 @@ class MainWindow(QMainWindow):
             task.setAutoDelete(True)
             QThreadPool.globalInstance().start(task, 10)  # v2.06 P1: サムネ群より高優先
 
-        self._update_preview(path)
-        if hasattr(self, "_layout_preview") and self._layout_preview:
-            self._layout_update_preview(path)
         self._prefetch_full_for_open(path)  # [v2.38.8] dbl クリックに備え裏でフルデコード
+
+        def _apply_preview():
+            if getattr(self, "_sel_defer_seq", 0) != seq or self._sel_path != path:
+                return
+            self._update_preview(path)
+            if hasattr(self, "_layout_preview") and self._layout_preview:
+                self._layout_update_preview(path)
+
+        # 選択枠を先に描画し、連打時のプレビュー再スケールは最新画像だけにまとめる。
+        QTimer.singleShot(16, _apply_preview)
         self._perf("クリック→メタ/プレビュー反映", (time.perf_counter() - _t0) * 1000)
 
     def _prefetch_full_for_open(self, path: str):
@@ -11716,10 +14375,11 @@ class MainWindow(QMainWindow):
         if self._full_viewer and self._full_viewer.isVisible(): return
         paths = self._filtered if self._filtered else self._all_paths
         start_max = self._cfg.get("fullviewer_maximized", False)
+        fit_mode = "actual" if self._cfg.get("fullviewer_fit_mode") == "actual" else "fit"
         _t0 = time.perf_counter()  # [v2.38.7] 一時的計装
         self._full_viewer = FullViewer(
             self, path, paths, self._loop_mode,
-            start_maximized=start_max)
+            start_maximized=start_max, fit_mode=fit_mode)
         self._full_viewer._open_t0 = _t0
         # [v2.38.8] 進行中のクリック先読みをビューアへ引き継ぎ（二重デコード回避）
         cp = getattr(self, "_click_prefetch", None)
@@ -11737,9 +14397,10 @@ class MainWindow(QMainWindow):
         self._perf("ビュアー構築", (time.perf_counter() - _t0) * 1000)
 
         def _on_fv_closed():
-            # 閉じた時点の最大化状態を保存
+            # 閉じた時点の表示状態を保存
             if self._full_viewer:
                 self._cfg["fullviewer_maximized"] = self._full_viewer.isMaximized()
+                self._cfg["fullviewer_fit_mode"] = self._full_viewer._fit_mode_pref
                 save_cfg(self._cfg)
             self._full_viewer = None
 
@@ -11747,6 +14408,7 @@ class MainWindow(QMainWindow):
 
     def _remove_path(self, path: str):
         """FullViewer削除後の親リスト更新"""
+        remove_safety_overrides([path])
         if path in self._all_paths: self._all_paths.remove(path)
         if path in self._filtered:  self._filtered.remove(path)
         if self._sel_path == path: self._sel_path = None
@@ -11793,6 +14455,25 @@ class MainWindow(QMainWindow):
             self._size_timer.timeout.connect(lambda: self._grid.set_thumb_size(self._size_slider.value()))
         self._size_timer.start(300)
 
+    def _add_hmv_tags(self, raw):
+        keys = raw.split(",") if isinstance(raw, str) else list(raw or [])
+        viewer = getattr(self, "_full_viewer", None)
+        if viewer is not None and viewer.isVisible():
+            count = viewer._add_hmv_tags(keys)
+        else:
+            selected = self._cfg.get("hmv_selected_tags", [])
+            if not isinstance(selected, list):
+                selected = []
+            for key in keys:
+                if key.split(":", 1)[0] in HMV_TAG_CATEGORIES and key not in selected:
+                    selected.append(key)
+            self._cfg["hmv_selected_tags"] = selected
+            self._cfg["hmv_tag_filter"] = bool(selected)
+            save_cfg(self._cfg)
+            count = len(selected)
+        if count:
+            self._set_status(T("HMVタグを追加しました（{0}タグ）").format(count))
+
     @Slot(str, QPoint)
     def _on_grid_rclick(self, path: str, pos: QPoint):
         sel = self._grid.get_selection()
@@ -11810,6 +14491,18 @@ class MainWindow(QMainWindow):
         menu.addAction(explorer_label, lambda: self._open_in_explorer(path))
         path_cnt = f"{len(sel)}{Te('件')}" if is_multi else ""
         menu.addAction(f"{Te('📋 パスをコピー')}{path_cnt}", lambda: self._copy_path_to_clipboard(sel))
+        if not is_multi:
+            hmv_menu = menu.addMenu(T("HMVタグに追加"))
+            meta = META.peek(path) or parse_meta(path)
+            entries = hmv_image_tag_entries(meta)
+            if not entries:
+                no_tag = hmv_menu.addAction(T("プロンプトタグが見つかりません"))
+                no_tag.setEnabled(False)
+            else:
+                category_labels = {"act": T("ACT"), "lora": T("作品LoRA"), "tag": T("タグ")}
+                for tag, key, category in entries:
+                    hmv_menu.addAction(f"{category_labels[category]}: {tag}",
+                                       lambda _key=key: self._add_hmv_tags([_key]))
         menu.addSeparator()
 
         # 編集系
@@ -11840,6 +14533,14 @@ class MainWindow(QMainWindow):
         rate_menu = menu.addMenu(T("★ レーティング"))
         for r, lbl in [(0,T("なし")),(1,"★1"),(2,"★★2"),(3,"★★★3"),(4,"★★★★4"),(5,"★★★★★5")]:
             rate_menu.addAction(lbl, lambda _r=r: self._rate(path, _r))
+        safety_menu = menu.addMenu(T("SFW / NSFW"))
+        overrides = {SAFETY_OVERRIDES.get(item, "auto") for item in sel}
+        current_override = next(iter(overrides)) if len(overrides) == 1 else ""
+        for value, label in (("auto", T("自動判定")), ("sfw", T("SFW")),
+                             ("nsfw", T("NSFW"))):
+            safety_menu.addAction(
+                ("✓ " if current_override == value else "") + label,
+                lambda _value=value: self._set_safety_classification(sel, _value))
         menu.addSeparator()
 
         # ─ ロゴオーバーレイ ─
@@ -11929,6 +14630,18 @@ class MainWindow(QMainWindow):
         paths = set(self._filtered or self._all_paths)
         self._grid.set_multi_sel(paths)
 
+    def _set_safety_classification(self, paths: list[str], value: str):
+        if not apply_safety_overrides(paths, value):
+            return
+        if hasattr(self, "_grid") and hasattr(self._grid, "_refresh_cell_badges"):
+            self._grid._refresh_cell_badges()
+        viewer = getattr(self, "_full_viewer", None)
+        if viewer is not None and viewer.isVisible():
+            if (viewer._hmv_filter_active()
+                    and not viewer._apply_hmv_playlist(keep_current=True)):
+                viewer._fallback_hmv_filters()
+            viewer._refresh_safety_info()
+
     def _rate(self, path: str, r: int):
         self._ratings[path] = r
         save_ratings(self._ratings)
@@ -11938,7 +14651,8 @@ class MainWindow(QMainWindow):
     def _delete_path(self, path: str, permanent: bool = False):
         """単一ファイル削除。複数選択時は _delete_multi を使うこと。"""
         dest = T("完全削除") if permanent else (T("ゴミ箱") if HAS_SEND2TRASH else ".deleted/")
-        preview = load_thumb(path, 42) if os.path.isfile(path) else None
+        preview = (load_thumb(path, 42, self.devicePixelRatioF())
+                   if os.path.isfile(path) else None)
         if not _DeleteConfirmDialog.ask(
             self,
             T("削除確認"),
@@ -11982,6 +14696,7 @@ class MainWindow(QMainWindow):
 
     def _remove_path_silent(self, path: str):
         """リストからパスを削除するだけ（グリッド更新なし・バッチ向け）"""
+        remove_safety_overrides([path])
         if path in self._all_paths: self._all_paths.remove(path)
         if path in self._filtered:  self._filtered.remove(path)
         if self._sel_path == path:  self._sel_path = None
@@ -12378,7 +15093,8 @@ class MainWindow(QMainWindow):
                 # グリッドと同じサムネイルサイズを指定する。そうすると閲覧で作られた
                 # mem/disk キャッシュをそのまま使える（148px 新指定だと全カード分を
                 # UIスレッドでフルデコードすることになる）。
-                px = load_thumb(path, int(self._cfg.get("thumb_size", 170)))
+                px = load_thumb(path, int(self._cfg.get("thumb_size", 170)),
+                                self.devicePixelRatioF())
                 if px is None or px.isNull():
                     px = load_preview_pixmap(path, 148, 148)
                 if px and not px.isNull():
@@ -12712,11 +15428,13 @@ class MainWindow(QMainWindow):
         thumb_size = self._size_slider.value()
         for path in self._all_paths:
             # キャッシュが既に存在するかチェック
-            raw_path = _cache_key(path, thumb_size)
+            pixel_ratio = self._grid.devicePixelRatioF()
+            raw_path = _cache_key(path, _thumb_pixel_size(thumb_size, pixel_ratio))
             if raw_path.exists():
                 continue
             # 存在しない場合のみキューに入れる
-            loader = ThumbLoader(path, thumb_size, self._grid._generation)
+            loader = ThumbLoader(path, thumb_size, self._grid._generation,
+                                 pixel_ratio)
             # 完了通知は不要（バックグラウンドで回すだけ）
             QThreadPool.globalInstance().start(loader)
             queued += 1
@@ -13295,7 +16013,8 @@ class MainWindow(QMainWindow):
                 base_px = QPixmap(src_path)
                 if base_px.isNull():
                     raise ValueError(T("画像を読み込めません"))
-                composed = self._compose_overlay(base_px, src_path, base_px.width(), base_px.height())
+                composed = self._compose_overlay(
+                    base_px, src_path, base_px.width(), base_px.height(), 1.0)
                 if not composed.save(dst_path):
                     raise ValueError(T("保存に失敗しました"))
                 done += 1
@@ -13927,15 +16646,21 @@ class MainWindow(QMainWindow):
         try:
             tsize = getattr(getattr(self, "_grid", None), "_thumb_size", 0)
             if tsize:
-                cached_thumb = _mem_get(f"{path}:{tsize}")
+                pixel_ratio = self.devicePixelRatioF()
+                cached_thumb = _mem_get(_thumb_mem_key(path, tsize, pixel_ratio))
                 if cached_thumb is not None:
                     placeholder = as_pixmap(cached_thumb)
+                if placeholder is not None and not placeholder.isNull():
+                    placeholder = placeholder.scaled(
+                        _thumb_pixel_size(pw, pixel_ratio),
+                        _thumb_pixel_size(ph, pixel_ratio),
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation)
+                    placeholder.setDevicePixelRatio(pixel_ratio)
         except Exception:
             placeholder = None
         if placeholder is not None and not placeholder.isNull():
-            lbl.setPixmap(placeholder.scaled(pw, ph,
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation))
+            lbl.setPixmap(placeholder)
         else:
             lbl.clear()
         # 同じラベル宛の既存ローダーをキャンセル
@@ -13950,30 +16675,35 @@ class MainWindow(QMainWindow):
         QThreadPool.globalInstance().start(loader, 10)  # v2.06 P1: サムネ群より高優先
 
     def _compose_overlay(self, base_px: "QPixmap", path: str,
-                         max_w: int, max_h: int) -> "QPixmap":
+                         max_w: int, max_h: int,
+                         pixel_ratio: float | None = None) -> "QPixmap":
         """base_px にオーバーレイロゴ・評価バッジを合成して返す（非破壊・表示専用）。
         合成要素が無い場合はスケールのみ返す高速パス (v2.06 P2)。"""
+        if pixel_ratio is None:
+            ratio_getter = getattr(self, "devicePixelRatioF", None)
+            pixel_ratio = (ratio_getter() if callable(ratio_getter)
+                           else base_px.devicePixelRatioF())
+        pixel_ratio = max(1.0, float(pixel_ratio))
         info = OVERLAY.get(path)
         rating_text = self._rating_badge_text(path)
-        if not info and not rating_text:
-            # v2.06 P2: オーバーレイ・バッジとも無い場合は painter 合成を省略
-            return base_px.scaled(max_w, max_h,
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation)
-
-        scaled = base_px.scaled(max_w, max_h,
+        scaled = base_px.scaled(_thumb_pixel_size(max_w, pixel_ratio),
+                                _thumb_pixel_size(max_h, pixel_ratio),
             Qt.AspectRatioMode.KeepAspectRatio,
             Qt.TransformationMode.SmoothTransformation)
+        scaled.setDevicePixelRatio(pixel_ratio)
+        if not info and not rating_text:
+            return scaled
 
         result = QPixmap(scaled.size())
+        result.setDevicePixelRatio(pixel_ratio)
         result.fill(Qt.GlobalColor.transparent)
         painter = QPainter(result)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         painter.drawPixmap(0, 0, scaled)
 
-        sw = scaled.width()
-        sh = scaled.height()
+        sw = max(1, int(round(scaled.width() / pixel_ratio)))
+        sh = max(1, int(round(scaled.height() / pixel_ratio)))
 
         if info:
             logo_path = info.get("logo_path", "")
@@ -13983,8 +16713,9 @@ class MainWindow(QMainWindow):
                     # ロゴの基準サイズ:
                     # 縦長画像は表示幅の 1/2、横長画像は表示幅の 1/3 を既定値とし、
                     # scale はその基準に対する倍率として扱う。
-                    base_w = base_px.width() if base_px.width() > 0 else sw
-                    base_h = base_px.height() if base_px.height() > 0 else sh
+                    base_ratio = max(1.0, base_px.devicePixelRatioF())
+                    base_w = base_px.width() / base_ratio if base_px.width() > 0 else sw
+                    base_h = base_px.height() / base_ratio if base_px.height() > 0 else sh
                     default_fraction = 0.5 if base_h > base_w else (1.0 / 3.0)
                     target_w = max(1, int(sw * default_fraction * float(info.get("scale", 1.0))))
                     logo_h_src = max(1, logo_px.height())
@@ -14019,9 +16750,12 @@ class MainWindow(QMainWindow):
                         x = margin_x
                         y = margin_y
 
-                    logo_scaled = logo_px.scaled(logo_w, logo_h,
+                    logo_scaled = logo_px.scaled(
+                        _thumb_pixel_size(logo_w, pixel_ratio),
+                        _thumb_pixel_size(logo_h, pixel_ratio),
                         Qt.AspectRatioMode.KeepAspectRatio,
                         Qt.TransformationMode.SmoothTransformation)
+                    logo_scaled.setDevicePixelRatio(pixel_ratio)
                     painter.drawPixmap(x, y, logo_scaled)
 
         if rating_text:
@@ -14383,6 +17117,7 @@ class MainWindow(QMainWindow):
         new_path = os.path.join(os.path.dirname(path), new_name)
         try:
             os.rename(path, new_path)
+            rename_safety_override(path, new_path)
             if path in self._all_paths:
                 i = self._all_paths.index(path)
                 self._all_paths[i] = new_path
@@ -14471,7 +17206,8 @@ class MainWindow(QMainWindow):
         if not self._cur_folder: return
         mime = QApplication.clipboard().mimeData()
         if not mime.hasUrls(): return
-        paths = [u.toLocalFile() for u in mime.urls() if os.path.isfile(u.toLocalFile())]
+        paths = [os.path.normpath(u.toLocalFile()) for u in mime.urls()
+                 if os.path.isfile(u.toLocalFile())]
         if not paths: return
         errors = []
         for src in paths:
@@ -14482,6 +17218,7 @@ class MainWindow(QMainWindow):
             try:
                 if getattr(self, '_clipboard_cut', False):
                     shutil.move(src, dst)
+                    rename_safety_override(src, dst)
                 else:
                     shutil.copy2(src, dst)
             except Exception as ex:
@@ -14576,7 +17313,7 @@ Ctrl+,          環境設定
 ←→↑↓ PgUp/Dn  前後の画像
 Space / F11     没入モード ON/OFF
 R               回転    +/-  ズーム
-0               等倍    S    スライドショー
+0               100%    S    スライド再生 / 一時停止
 Esc/Enter       閉じる  Delete  削除
 """)
         dlg = QDialog(self); dlg.setWindowTitle(T("キーボードショートカット"))

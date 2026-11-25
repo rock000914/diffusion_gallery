@@ -3,3 +3,9 @@
 PySide6==6.11.0
 Pillow==11.3.0
 pyinstaller==6.19.0
+
+# 音声解析・波形同期・音声増幅
+librosa==0.11.0
+numpy==2.2.6
+soundfile==0.13.1
+scipy==1.15.3
