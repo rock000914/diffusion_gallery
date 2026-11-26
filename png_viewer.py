@@ -181,7 +181,7 @@ from PySide6.QtCore import (
     QAbstractTableModel, QItemSelectionModel,
     QMimeData, QUrl, QRunnable, QThreadPool, QSaveFile, QIODevice,
     QPropertyAnimation, QEasingCurve,
-    QFileSystemWatcher, QDir, QEvent,
+    QFileSystemWatcher, QDir, QEvent, QLockFile,
 )
 
 try:
@@ -193,7 +193,7 @@ except ImportError:
 # スライドショー音楽再生用 (v2.29)。PySide6 の Multimedia が入っていない環境では
 # 音楽機能を無効化して画像ビューア本体は動かす。
 try:
-    from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
+    from PySide6.QtMultimedia import QMediaDevices, QMediaPlayer, QAudioOutput
     HAS_MULTIMEDIA = True
 except ImportError:
     QMediaPlayer = None
@@ -225,7 +225,7 @@ except Exception:
 # ══════════════════════════════════════════════════════════════════════════════
 #  定数・設定
 # ══════════════════════════════════════════════════════════════════════════════
-APP_VERSION  = "v2.42.2"
+APP_VERSION  = "v2.42.15"
 APP_NAME     = "Diffusion Gallery"
 VOLUME_MAX   = 400   # voice 音量スライダー上限(%)。100超は再生前 PCM 増幅(temp)で実現
 APP_AUTHOR   = "nemot"
@@ -234,6 +234,7 @@ _APP_ICON_B64 = (
 )
 
 APP_DIR      = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "diffusion_gallery"
+APP_ROOT     = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 # 旧アプリ名（png_viewer）時代のデータフォルダ。初回起動時に設定・キャッシュを移行する。
 LEGACY_APP_DIR = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "png_viewer"
 SETTINGS_FILE= APP_DIR / "settings.json"
@@ -254,10 +255,16 @@ SUPPORTED_LANGUAGES = [
 _LANGUAGE_LABELS = dict(SUPPORTED_LANGUAGES)
 
 def _load_ui_language() -> str:
-    try:
-        lang = str(json.loads(SETTINGS_FILE.read_text("utf-8")).get("language", "ja") or "ja")
-    except Exception:
-        lang = "ja"
+    lang = "ja"
+    for path in (SETTINGS_FILE, SETTINGS_FILE.with_name("settings.json.bak"),
+                 LEGACY_APP_DIR / "settings.json"):
+        try:
+            value = json.loads(path.read_text("utf-8")).get("language")
+        except Exception:
+            continue
+        if value:
+            lang = str(value)
+            break
     return lang if lang in _LANGUAGE_LABELS else "ja"
 
 _UI_LANG = _load_ui_language()
@@ -924,9 +931,9 @@ _I18N_TABLE = {
     '表示レイアウト': {"en": "View layout", "zh": "显示布局", "ko": "표시 레이아웃"},
     'スライド 再生 / 一時停止 (S)': {"en": "Slide play / pause (S)", "zh": "幻灯片 播放 / 暂停 (S)", "ko": "슬라이드 재생 / 일시정지 (S)"},
     'スライド 停止（先頭へ戻る）': {"en": "Stop slide (return to start)", "zh": "停止幻灯片（返回开头）", "ko": "슬라이드 중지(처음으로)"},
-    'スライド音楽 ON/OFF': {"en": "Slide music ON/OFF", "zh": "幻灯片音乐 ON/OFF", "ko": "슬라이드 음악 ON/OFF"},
-    'スライド音楽 ON': {"en": "Slide music ON", "zh": "幻灯片音乐 ON", "ko": "슬라이드 음악 ON"},
-    'スライド音楽 OFF': {"en": "Slide music OFF", "zh": "幻灯片音乐 OFF", "ko": "슬라이드 음악 OFF"},
+    'HMV ON/OFF': {"en": "HMV ON/OFF", "zh": "HMV 开/关", "ko": "HMV 켜기/끄기"},
+    'HMV ON': {"en": "HMV ON", "zh": "HMV 开", "ko": "HMV 켜기"},
+    'HMV OFF': {"en": "HMV OFF", "zh": "HMV 关", "ko": "HMV 끄기"},
     'スライドの音量・速度・タグ': {"en": "Slide volume, speed and tags", "zh": "幻灯片音量、速度和标签", "ko": "슬라이드 볼륨・속도・태그"},
     '原寸': {"en": "Actual", "zh": "原始尺寸", "ko": "원본 크기"},
     'fit': {"en": "fit", "zh": "适合", "ko": "맞춤"},
@@ -1040,6 +1047,168 @@ _I18N_TABLE = {
 }
 
 
+import copy as _copy
+
+_SETTINGS_IO_BLOCKED = False
+_SETTINGS_BASELINE = {}
+_SETTINGS_BASELINE_MTIME_NS = 0
+_SETTINGS_LOADED_CFG = None
+_SETTINGS_PENDING_RESTORE = None
+_SETTINGS_MISSING = object()
+
+
+def _settings_mtime_ns(path: Path) -> int:
+    try:
+        return path.stat().st_mtime_ns
+    except OSError:
+        return 0
+
+
+def _remember_settings(cfg: dict | None) -> None:
+    global _SETTINGS_BASELINE, _SETTINGS_BASELINE_MTIME_NS
+    global _SETTINGS_LOADED_CFG, _SETTINGS_PENDING_RESTORE
+    _SETTINGS_LOADED_CFG = cfg
+    _SETTINGS_BASELINE = _copy.deepcopy(cfg) if isinstance(cfg, dict) else {}
+    _SETTINGS_BASELINE_MTIME_NS = _settings_mtime_ns(SETTINGS_FILE)
+    _SETTINGS_PENDING_RESTORE = None
+
+
+def _merge_settings_dict(target: dict, source: dict | None) -> None:
+    if not source:
+        return
+    for key, value in source.items():
+        if isinstance(value, dict) and isinstance(target.get(key), dict):
+            _merge_settings_dict(target[key], value)
+        else:
+            target[key] = _copy.deepcopy(value)
+
+
+def _apply_pending_changes(target: dict, baseline: dict, desired: dict) -> None:
+    for key in baseline:
+        if key not in desired and target.get(key, _SETTINGS_MISSING) == baseline[key]:
+            target.pop(key, None)
+    for key, value in desired.items():
+        if key not in baseline:
+            target_value = target.get(key, _SETTINGS_MISSING)
+            if target_value is _SETTINGS_MISSING:
+                target[key] = _copy.deepcopy(value)
+            elif isinstance(target_value, dict) and isinstance(value, dict):
+                _apply_pending_changes(target_value, {}, value)
+            continue
+        target_value = target.get(key, _SETTINGS_MISSING)
+        if (isinstance(baseline[key], dict) and isinstance(value, dict)
+                and isinstance(target_value, dict)):
+            _apply_pending_changes(target_value, baseline[key], value)
+            continue
+        if target_value != baseline[key]:
+            continue
+        target[key] = _copy.deepcopy(value)
+
+
+def _merge_favorites(target: list, baseline: list, local: list) -> list:
+    removed = [item for item in baseline if item not in local]
+    added = [item for item in local if item not in baseline]
+    merged = []
+    for item in target:
+        if item not in removed and item not in merged:
+            merged.append(item)
+    for item in added:
+        if item not in merged:
+            merged.append(item)
+    return merged
+
+
+def _apply_settings_changes(target: dict, baseline: dict, local: dict) -> None:
+    for key in baseline:
+        if key not in local:
+            target.pop(key, None)
+    for key, value in local.items():
+        if key in baseline and value == baseline[key]:
+            continue
+        base_value = baseline.get(key)
+        target_value = target.get(key)
+        if key == "favorites" and isinstance(value, list):
+            base_list = base_value if isinstance(base_value, list) else []
+            target_list = target_value if isinstance(target_value, list) else []
+            target[key] = _merge_favorites(target_list, base_list, value)
+        elif isinstance(value, dict):
+            nested_baseline = base_value if isinstance(base_value, dict) else {}
+            if not isinstance(target_value, dict):
+                target_value = {}
+                target[key] = target_value
+            _apply_settings_changes(target_value, nested_baseline, value)
+        else:
+            target[key] = _copy.deepcopy(value)
+
+
+def _sync_settings_snapshot(merged: dict) -> None:
+    global _SETTINGS_BASELINE, _SETTINGS_BASELINE_MTIME_NS
+    loaded = _SETTINGS_LOADED_CFG
+    if loaded is not None:
+        for key in list(loaded):
+            if key not in merged:
+                if key == "favorites" and isinstance(loaded[key], list):
+                    loaded[key][:] = []
+                del loaded[key]
+        for key, value in merged.items():
+            if key not in loaded:
+                loaded[key] = _copy.deepcopy(value)
+            elif isinstance(loaded[key], list) and isinstance(value, list):
+                loaded[key][:] = _copy.deepcopy(value)
+            elif loaded[key] != value:
+                loaded[key] = _copy.deepcopy(value)
+    _SETTINGS_BASELINE = _copy.deepcopy(merged)
+    _SETTINGS_BASELINE_MTIME_NS = _settings_mtime_ns(SETTINGS_FILE)
+
+
+def _read_json_dict(path: Path) -> dict | None:
+    try:
+        text = path.read_text("utf-8")
+    except FileNotFoundError:
+        return None
+    except UnicodeError:
+        return None
+    except OSError:
+        raise
+    try:
+        data = json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _lock_settings():
+    lock = QLockFile(str(SETTINGS_FILE.with_name("settings.json.lock")))
+    for _ in range(30):
+        if lock.tryLock(1000):
+            return lock
+        if lock.error() != QLockFile.LockFailedError:
+            break
+    raise OSError("設定ファイルのロックを取得できません")
+
+
+def _atomic_write_json(target: Path, d: dict) -> bool:
+    """JSON を一時ファイル経由で差し替え、保存途中の破損を防ぐ。"""
+    import tempfile as _tf
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        _fd, _tmp = _tf.mkstemp(dir=str(target.parent), suffix=".tmp.json")
+        try:
+            with os.fdopen(_fd, "w", encoding="utf-8") as f:
+                json.dump(d, f, ensure_ascii=False, indent=2)
+            os.replace(_tmp, target)
+            return True
+        except Exception:
+            try:
+                os.replace(_tmp, _tmp + ".failed")
+            except OSError:
+                pass
+            raise
+    except Exception as e:
+        print(f"{target.name}{Te(' の保存に失敗: ')}{e}")
+        return False
+
+
 def _resolve_cache_dir() -> Path:
     """サムネ disk キャッシュの置き場（settings.json の `thumb_cache_dir`）。
 
@@ -1047,9 +1216,17 @@ def _resolve_cache_dir() -> Path:
     未設定・相対パス・読込失敗は従来通り LOCALAPPDATA 配下にフォールバックする。
     """
     try:
-        p = json.loads(SETTINGS_FILE.read_text("utf-8")).get("thumb_cache_dir")
-    except Exception:
-        p = None
+        cfg = _read_json_dict(SETTINGS_FILE)
+        if cfg is None or "thumb_cache_dir" not in cfg:
+            for candidate in (SETTINGS_FILE.with_name("settings.json.bak"),
+                              LEGACY_APP_DIR / "settings.json"):
+                recovered = _read_json_dict(candidate)
+                if recovered is not None and "thumb_cache_dir" in recovered:
+                    cfg = recovered
+                    break
+    except OSError:
+        cfg = None
+    p = cfg.get("thumb_cache_dir") if cfg is not None else None
     if isinstance(p, str) and p.strip():
         q = Path(p.strip())
         if q.is_absolute():
@@ -1063,16 +1240,16 @@ QUALITY_CACHE_FILE = Path(os.environ.get("APPDATA", Path.home())) / "AIVideoMana
 
 
 def _migrate_legacy_app_dir() -> None:
-    """旧 png_viewer フォルダのデータを diffusion_gallery へ一度だけ引き継ぐ。
-    新 settings.json が既に存在すれば移行しない（旧ランタイムが後から上書きしても安全）。
-    一時ファイル・バックアップ・再生成可能な meta_cache.pkl / debug.log は対象外。"""
+    """旧 png_viewer フォルダのデータを diffusion_gallery へ一度だけ引き継ぐ。"""
     try:
         import shutil as _sh
-        if not LEGACY_APP_DIR.is_dir() or SETTINGS_FILE.exists():
+        marker = APP_DIR / ".legacy_settings_migrated_v1"
+        if not LEGACY_APP_DIR.is_dir() or marker.exists():
             return
+        APP_DIR.mkdir(parents=True, exist_ok=True)
         def _skip(n: str) -> bool:
             return (n.startswith("tmp") or ".bak" in n or "backup" in n
-                    or n in ("debug.log", "meta_cache.pkl"))
+                    or n in ("settings.json", "debug.log", "meta_cache.pkl"))
         for src in LEGACY_APP_DIR.iterdir():
             if _skip(src.name):
                 continue
@@ -1086,6 +1263,37 @@ def _migrate_legacy_app_dir() -> None:
                     _sh.copy2(src, dst)
             except OSError:
                 pass
+        legacy_cfg = _read_json_dict(LEGACY_APP_DIR / "settings.json")
+        if legacy_cfg is None:
+            return
+        lock = _lock_settings()
+        try:
+            current_cfg = _read_json_dict(SETTINGS_FILE)
+            backup_cfg = _read_json_dict(SETTINGS_FILE.with_name("settings.json.bak"))
+            if current_cfg is None:
+                if SETTINGS_FILE.exists():
+                    try:
+                        _sh.copy2(SETTINGS_FILE, SETTINGS_FILE.with_name("settings.json.corrupt"))
+                    except OSError:
+                        pass
+                merged = _copy.deepcopy(legacy_cfg)
+                _merge_settings_dict(merged, backup_cfg)
+                if not _atomic_write_json(SETTINGS_FILE, merged):
+                    return
+            else:
+                merged = _copy.deepcopy(legacy_cfg)
+                _merge_settings_dict(merged, backup_cfg)
+                _merge_settings_dict(merged, current_cfg)
+                if merged != current_cfg:
+                    try:
+                        _sh.copy2(SETTINGS_FILE, SETTINGS_FILE.with_name("settings.json.pre_migration"))
+                    except OSError:
+                        pass
+                    if not _atomic_write_json(SETTINGS_FILE, merged):
+                        return
+            _atomic_write_json(marker, {"migrated": True})
+        finally:
+            lock.unlock()
     except Exception:
         pass
 
@@ -1922,36 +2130,186 @@ def _normalize_path(path: str) -> str:
     except Exception:
         return path
 
-def _atomic_write_json(target: Path, d: dict) -> bool:
-    """JSON を一時ファイル経由で差し替える（途中で落ちても元の内容が残る）。
+def resolve_audio_folder(folder: str, kind: str) -> str:
+    folder = str(folder or "").strip()
+    if not folder or os.path.isdir(folder):
+        return folder
+    if os.path.basename(os.path.normpath(folder)).lower() != kind:
+        return folder
+    candidate = APP_ROOT / kind
+    return str(candidate) if candidate.is_dir() else folder
 
-    write_text の直書きは保存中にクラッシュ／ディスク満杯で 0 バイトになり、
-    settings.json と ratings.json（★評価の実体）を失うと復旧できない。
-    メタキャッシュが既に mkstemp + os.replace を使っているので揃える。
-    """
-    import tempfile as _tf
-    try:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        _fd, _tmp = _tf.mkstemp(dir=str(target.parent), suffix=".tmp.json")
-        try:
-            with os.fdopen(_fd, "w", encoding="utf-8") as f:
-                json.dump(d, f, ensure_ascii=False, indent=2)
-            os.replace(_tmp, target)
-            return True
-        except Exception:
-            try: os.unlink(_tmp)
-            except OSError: pass
-            raise
-    except Exception as e:
-        print(f"{target.name}{Te(' の保存に失敗: ')}{e}")
-        return False
 
 def load_cfg() -> dict:
-    try: return json.loads(SETTINGS_FILE.read_text("utf-8"))
-    except Exception: return {}
+    global _SETTINGS_IO_BLOCKED, _SETTINGS_BASELINE, _SETTINGS_PENDING_RESTORE
+    try:
+        lock = _lock_settings()
+    except OSError as e:
+        _SETTINGS_IO_BLOCKED = True
+        _remember_settings(None)
+        print(f"settings.json{Te(' の読込を中止: ')}{e}")
+        return {}
+    try:
+        try:
+            current = _read_json_dict(SETTINGS_FILE)
+        except OSError as e:
+            _SETTINGS_IO_BLOCKED = True
+            _remember_settings(None)
+            print(f"settings.json{Te(' の読込を中止: ')}{e}")
+            return {}
+        _SETTINGS_IO_BLOCKED = False
+        recovery_error = False
+        recoveries = []
+        migration_pending = (
+            not (APP_DIR / ".legacy_settings_migrated_v1").exists()
+            and (LEGACY_APP_DIR / "settings.json").is_file())
+        if current is None or migration_pending:
+            for path in (LEGACY_APP_DIR / "settings.json",
+                         SETTINGS_FILE.with_name("settings.json.bak")):
+                try:
+                    recoveries.append(_read_json_dict(path))
+                except OSError as e:
+                    recovery_error = True
+                    recoveries.append(None)
+                    print(f"{path.name}{Te(' の読込を中止: ')}{e}")
+        if current is None and recovery_error:
+            _SETTINGS_IO_BLOCKED = True
+            _remember_settings(None)
+            return {}
+        write_failed = False
+        if current is None:
+            if not any(item is not None for item in recoveries):
+                if SETTINGS_FILE.exists():
+                    import shutil as _sh
+                    try:
+                        _sh.copy2(SETTINGS_FILE, SETTINGS_FILE.with_name("settings.json.corrupt"))
+                    except OSError:
+                        pass
+                cfg = {}
+            else:
+                cfg = {}
+                for recovery in recoveries:
+                    _merge_settings_dict(cfg, recovery)
+                if SETTINGS_FILE.exists():
+                    import shutil as _sh
+                    try:
+                        _sh.copy2(SETTINGS_FILE, SETTINGS_FILE.with_name("settings.json.corrupt"))
+                    except OSError:
+                        pass
+                if not _atomic_write_json(SETTINGS_FILE, cfg):
+                    write_failed = True
+        elif migration_pending:
+            cfg = {}
+            for recovery in recoveries:
+                _merge_settings_dict(cfg, recovery)
+            _merge_settings_dict(cfg, current)
+            if cfg != current and not _atomic_write_json(SETTINGS_FILE, cfg):
+                write_failed = True
+        else:
+            cfg = current
+        baseline_cfg = _copy.deepcopy(cfg)
+        migrated = {}
+        for kind in ("bgm", "voice"):
+            key = f"ss_{kind}_folder"
+            old = cfg.get(key, "")
+            resolved = resolve_audio_folder(old, kind) if isinstance(old, str) else old
+            if resolved != old:
+                cfg[key] = resolved
+                migrated[key] = resolved
+        migration_ok = True
+        if migrated:
+            migration_ok = _save_cfg_unlocked(migrated) is not None
+            if not migration_ok:
+                write_failed = True
+        _remember_settings(cfg)
+        if not migration_ok:
+            _SETTINGS_BASELINE = baseline_cfg
+        if write_failed:
+            try:
+                pending_base = _read_json_dict(SETTINGS_FILE) or {}
+            except OSError:
+                pending_base = {}
+            _SETTINGS_PENDING_RESTORE = (_copy.deepcopy(pending_base),
+                                         _copy.deepcopy(cfg))
+        return cfg
+    finally:
+        lock.unlock()
 
-def save_cfg(d: dict):
-    _atomic_write_json(SETTINGS_FILE, d)
+
+def _save_cfg_unlocked(
+        d: dict, baseline: dict | None = None,
+        pending_restore: tuple[dict, dict] | None = None) -> dict | None:
+    previous = _read_json_dict(SETTINGS_FILE)
+    full_snapshot = baseline is not None
+    if previous is None:
+        if SETTINGS_FILE.exists():
+            import shutil as _sh
+            try:
+                _sh.copy2(SETTINGS_FILE, SETTINGS_FILE.with_name("settings.json.corrupt"))
+            except OSError:
+                pass
+        if full_snapshot:
+            merged = _copy.deepcopy(baseline)
+            backup_path = SETTINGS_FILE.with_name("settings.json.bak")
+            if _settings_mtime_ns(backup_path) > _SETTINGS_BASELINE_MTIME_NS:
+                _merge_settings_dict(merged, _read_json_dict(backup_path))
+        else:
+            merged = {}
+            for path in (LEGACY_APP_DIR / "settings.json",
+                         SETTINGS_FILE.with_name("settings.json.bak")):
+                recovery = _read_json_dict(path)
+                _merge_settings_dict(merged, recovery)
+        if pending_restore is not None:
+            _apply_pending_changes(merged, *pending_restore)
+        if full_snapshot:
+            _apply_settings_changes(merged, baseline, d)
+        else:
+            _merge_settings_dict(merged, d)
+        return merged if _atomic_write_json(SETTINGS_FILE, merged) else None
+    merged = _copy.deepcopy(previous)
+    if pending_restore is not None:
+        _apply_pending_changes(merged, *pending_restore)
+    if baseline is None:
+        _merge_settings_dict(merged, d)
+    else:
+        _apply_settings_changes(merged, baseline, d)
+    if merged == previous:
+        return merged
+    if not _atomic_write_json(SETTINGS_FILE.with_name("settings.json.bak"), previous):
+        return None
+    return merged if _atomic_write_json(SETTINGS_FILE, merged) else None
+
+
+def save_cfg(d: dict) -> bool:
+    global _SETTINGS_IO_BLOCKED, _SETTINGS_PENDING_RESTORE
+    if not isinstance(d, dict):
+        return False
+    if _SETTINGS_IO_BLOCKED:
+        try:
+            _read_json_dict(SETTINGS_FILE)
+        except OSError:
+            return False
+        _SETTINGS_IO_BLOCKED = False
+    try:
+        lock = _lock_settings()
+    except OSError as e:
+        _SETTINGS_IO_BLOCKED = True
+        print(f"settings.json{Te(' の保存を中止: ')}{e}")
+        return False
+    try:
+        baseline = _SETTINGS_BASELINE if d is _SETTINGS_LOADED_CFG else None
+        merged = _save_cfg_unlocked(d, baseline, _SETTINGS_PENDING_RESTORE)
+        if merged is None:
+            return False
+        _SETTINGS_PENDING_RESTORE = None
+        _sync_settings_snapshot(merged)
+        return True
+    except OSError as e:
+        _SETTINGS_IO_BLOCKED = True
+        print(f"settings.json{Te(' の保存を中止: ')}{e}")
+        return False
+    finally:
+        lock.unlock()
 
 def load_ratings() -> dict:
     try: return json.loads(RATINGS_FILE.read_text("utf-8"))
@@ -2111,7 +2469,6 @@ HMV_PRESET_DEFAULTS = {
     "ss_anim_type": "fade",
     "ss_anim_ms": 350,
     "ss_anim_pool": ["fade", "slide_lr", "slide_ud", "zoom", "pulse"],
-    "ss_anim_pulse_beats": 1,
     "ss_bgm_speed": 1.0,
     "ss_bgm_bpm": 0,
     "ss_bgm_beat": 4,
@@ -2122,6 +2479,7 @@ HMV_PRESET_DEFAULTS = {
     "ss_reactive_edm": True,
     "ss_reactive_outline": True,
     "ss_reactive_zoom": True,
+    "ss_reactive_pulse": True,
     "ss_reactive_ripple": True,
     "ss_reactive_glow": True,
     "ss_reactive_particles": True,
@@ -2148,13 +2506,17 @@ def _hmv_base_tag(tag: str) -> str:
         value = stripped
 
 
-def infer_image_safety(meta: dict) -> str:
-    tags = {_hmv_base_tag(raw) for raw in tag_list(meta.get("prompt", ""))}
+def infer_tag_safety(tags) -> str:
+    tags = set(tags)
     if tags & HMV_NSFW_TAGS:
         return "nsfw"
     if tags & HMV_SFW_TAGS:
         return "sfw"
     return "sfw" if tags else "unknown"
+
+
+def infer_image_safety(meta: dict) -> str:
+    return infer_tag_safety(_hmv_base_tag(raw) for raw in tag_list(meta.get("prompt", "")))
 
 
 def image_safety(path: str, meta: dict | None = None,
@@ -2212,15 +2574,76 @@ def hmv_keys_from_prompt(text: str) -> list[str]:
     return keys
 
 
+def hmv_keys_from_text(text: str) -> list[str]:
+    keys: list[str] = []
+    normalized_text = str(text or "").replace("\r\n", "\n").replace("\r", "\n")
+    tokens: list[str] = []
+    for line in normalized_text.split("\n"):
+        pending_lora = ""
+        for part in _split_prompt_tokens(line):
+            value = part.strip()
+            prefix, separator, _rest = value.partition(":")
+            prefix = prefix.lower() if separator else ""
+            if pending_lora:
+                if prefix in HMV_TAG_CATEGORIES or _RE_LORA_FULL.match(value):
+                    tokens.append(pending_lora)
+                    pending_lora = ""
+                else:
+                    pending_lora += "," + value
+                    continue
+            if prefix == "lora":
+                pending_lora = value
+            else:
+                tokens.append(value)
+        if pending_lora:
+            tokens.append(pending_lora)
+    for token in tokens:
+        match = _RE_LORA_FULL.match(token.strip())
+        if match:
+            category, tag = "lora", match.group(1)
+        else:
+            category = ""
+            value = token.strip()
+            prefix, separator, rest = value.partition(":")
+            if separator and prefix.lower() in HMV_TAG_CATEGORIES:
+                category, value = prefix.lower(), rest
+            tag = _hmv_base_tag(value)
+            if not category:
+                category = "act" if tag in HMV_ACT_TAGS else "tag"
+        if tag:
+            key = hmv_tag_key(category, tag)
+            if key not in keys:
+                keys.append(key)
+    return keys
+
+
+def sanitize_hmv_keys(values) -> list[str]:
+    keys: list[str] = []
+    for value in values if isinstance(values, (list, tuple)) else []:
+        if not isinstance(value, str) or not value.strip():
+            continue
+        prefix, separator, rest = value.strip().partition(":")
+        if separator and prefix.lower() in HMV_TAG_CATEGORIES:
+            parsed = [hmv_tag_key(prefix.lower(), rest)]
+        else:
+            parsed = hmv_keys_from_text(value)
+        for key in parsed:
+            if key not in keys:
+                keys.append(key)
+    return keys
+
+
 def hmv_image_tag_entries(meta: dict) -> list[tuple[str, str, str]]:
     extracted = hmv_prompt_tags(meta)
     return [(tag, hmv_tag_key(category, tag), category)
             for category in HMV_TAG_CATEGORIES for tag in extracted[category]]
 
 
-def hmv_tag_catalog(paths: list[str], meta_snap: dict) -> dict[str, list[tuple[str, int, str]]]:
+def hmv_tag_catalog(paths: list[str], meta_snap: dict, cancelled=None) -> dict[str, list[tuple[str, int, str]]]:
     counts = {category: {} for category in HMV_TAG_CATEGORIES}
     for path in paths:
+        if cancelled is not None and cancelled():
+            return {category: [] for category in HMV_TAG_CATEGORIES}
         meta = meta_snap.get(path)
         if not meta:
             continue
@@ -2276,11 +2699,27 @@ def _hmv_alternating_blocks(paths: list[str], safety_by_path: dict) -> list[list
 
 def hmv_build_playlist(paths: list[str], meta_snap: dict, selected: list[str],
                        group_by_tag: bool = True,
-                       safety_mode: str = "all") -> list[str]:
+                       safety_mode: str = "all", cancelled=None) -> list[str]:
     mode = safety_mode if safety_mode in HMV_SAFETY_MODES else "all"
-    safety_by_path = {
-        path: image_safety(path, meta_snap.get(path)) for path in paths
-    }
+    selected = sanitize_hmv_keys(selected)
+    safety_by_path = {}
+    tag_keys_by_path = {}
+    for path in paths:
+        if cancelled is not None and cancelled():
+            return []
+        meta = meta_snap.get(path)
+        extracted = hmv_prompt_tags(meta or {}) if selected or mode != "all" else None
+        if mode != "all":
+            override = SAFETY_OVERRIDES.get(path)
+            safety_by_path[path] = (
+                override if override in ("sfw", "nsfw")
+                else infer_tag_safety(extracted["act"] + extracted["tag"] + extracted["lora"]))
+        if selected and meta:
+            tag_keys_by_path[path] = {
+                hmv_tag_key(category, tag)
+                for category in HMV_TAG_CATEGORIES
+                for tag in extracted[category]
+            }
     if mode != "all":
         allowed = {"sfw", "nsfw"} if mode == "both" else {mode}
         paths = [path for path in paths if safety_by_path.get(path) in allowed]
@@ -2293,10 +2732,10 @@ def hmv_build_playlist(paths: list[str], meta_snap: dict, selected: list[str],
         return list(paths)
     groups = {key: [] for key in selected}
     for path in paths:
-        meta = meta_snap.get(path)
-        if not meta:
+        available = tag_keys_by_path.get(path)
+        if not available:
             continue
-        match = hmv_match_tag(meta, selected)
+        match = next((key for key in selected if key in available), None)
         if match is not None:
             groups[match].append(path)
     if mode == "both":
@@ -4397,6 +4836,47 @@ class TagCountWorker(QThread):
             self.finished.emit(items)
 
 
+class HmvCatalogWorker(QThread):
+    result_ready = Signal(dict)
+
+    def __init__(self, paths, meta_snap, parent=None):
+        super().__init__(parent)
+        self._paths = list(paths)
+        self._meta = dict(meta_snap)
+        self._cancelled = False
+
+    def cancel(self):
+        self._cancelled = True
+
+    def run(self):
+        catalog = hmv_tag_catalog(self._paths, self._meta, lambda: self._cancelled)
+        if not self._cancelled:
+            self.result_ready.emit(catalog)
+
+
+class HmvPlaylistWorker(QThread):
+    result_ready = Signal(list)
+
+    def __init__(self, paths, meta_snap, selected, group_by_tag, safety_mode, parent=None):
+        super().__init__(parent)
+        self._paths = list(paths)
+        self._meta = dict(meta_snap)
+        self._selected = list(selected)
+        self._group_by_tag = bool(group_by_tag)
+        self._safety_mode = safety_mode
+        self._cancelled = False
+
+    def cancel(self):
+        self._cancelled = True
+
+    def run(self):
+        playlist = hmv_build_playlist(
+            self._paths, self._meta, self._selected,
+            self._group_by_tag, self._safety_mode, lambda: self._cancelled)
+        if not self._cancelled:
+            self.result_ready.emit(playlist)
+
+
 class ModelListWorker(QThread):
     """モデルリスト集計スレッド（安定したQThreadサブクラス）"""
     finished = Signal(list, list, dict)
@@ -5095,7 +5575,7 @@ class VirtualGrid(QWidget):
         key = resolve_lineage(meta.get("model", ""), meta.get("raw", ""), meta.get("loras"))
         text, bg = LINEAGE_BADGES.get(key, ("", None))
         cell.set_lineage_badge(text, bg)
-        cell.set_safety_badge(image_safety(cell.path, meta))
+        cell.set_safety(image_safety(cell.path, meta))
 
     def _refresh_cell_badges(self):
         for cell in self._visible_cells.values():
@@ -5403,8 +5883,6 @@ class _ThumbCell(QWidget):
         self._badge_font.setBold(True)
         self._badge_px = QPixmap()
         self._safety = ""
-        self._safety_px = QPixmap()
-        self._safety_size = QSize(38, 16)
         self._render_px_normal = QPixmap()
         self._render_px_selected = QPixmap()
         self._render_px_multi = QPixmap()
@@ -5445,7 +5923,6 @@ class _ThumbCell(QWidget):
             self._px = px
         self._rebuild_name_cache()
         self._refresh_lineage_badge()
-        self._refresh_safety_badge()
         self._rebuild_render_cache()
         self.update()
 
@@ -5455,6 +5932,14 @@ class _ThumbCell(QWidget):
             self._refresh_for_dpr(self.devicePixelRatioF())
 
     def _rebuild_render_cache(self):
+        safety_overlay = {
+            "sfw": QColor(52, 132, 82, 20),
+            "nsfw": QColor(176, 58, 82, 18),
+        }.get(self._safety)
+        safety_border = {
+            "sfw": QColor("#365f46"),
+            "nsfw": QColor("#653642"),
+        }.get(self._safety)
         for attr, bg, border, name_px in (
                 ("_render_px_normal", PAL["bg3"], PAL["bg3"], self._name_px_normal),
                 ("_render_px_selected", PAL["sel_dim"], PAL["accent"], self._name_px_selected),
@@ -5465,6 +5950,8 @@ class _ThumbCell(QWidget):
             render_px.fill(Qt.GlobalColor.transparent)
             painter = QPainter(render_px)
             painter.fillRect(self.rect(), QColor(bg))
+            if safety_overlay is not None:
+                painter.fillRect(self.rect(), safety_overlay)
             if not self._px.isNull():
                 px = self._px
                 logical_w = px.width() / self._dpr
@@ -5475,11 +5962,10 @@ class _ThumbCell(QWidget):
                     px)
             if not self._badge_px.isNull():
                 painter.drawPixmap(5, 5, self._badge_px)
-            if not self._safety_px.isNull():
-                painter.drawPixmap(self._safety_rect().topLeft(), self._safety_px)
             painter.drawPixmap(0, self._size + 4, name_px)
             painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-            painter.setPen(QPen(QColor(border), 2, Qt.PenStyle.SolidLine))
+            border_color = safety_border if attr == "_render_px_normal" and safety_border else QColor(border)
+            painter.setPen(QPen(border_color, 2, Qt.PenStyle.SolidLine))
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawRoundedRect(self.rect(), 4, 4)
             painter.end()
@@ -5515,60 +6001,13 @@ class _ThumbCell(QWidget):
         else:
             self._badge_px = QPixmap()
 
-    def set_safety_badge(self, value: str):
+    def set_safety(self, value: str):
         value = value if value in ("sfw", "nsfw", "unknown") else "unknown"
         if value == self._safety:
             return
         self._safety = value
-        self._refresh_safety_badge()
         self._rebuild_render_cache()
         self.update()
-
-    def _refresh_safety_badge(self):
-        if not self._safety:
-            self._safety_px = QPixmap()
-            return
-        text, bg = {
-            "sfw": ("SFW", "#207a4a"),
-            "nsfw": ("NSFW", "#a8324a"),
-            "unknown": (T("未分類"), "#5b6470"),
-        }[self._safety]
-        max_width = max(1, self.width() - 6)
-        badge_font = QFont(self._badge_font)
-        metrics = QFontMetrics(badge_font)
-        text_width = max(1, max_width - 8)
-        while metrics.horizontalAdvance(text) > text_width and badge_font.pointSize() > 5:
-            badge_font.setPointSize(badge_font.pointSize() - 1)
-            metrics = QFontMetrics(badge_font)
-        display_text = metrics.elidedText(
-            text, Qt.TextElideMode.ElideRight, text_width)
-        width = min(max_width, max(38, metrics.horizontalAdvance(display_text) + 8))
-        self._safety_size = QSize(width, 16)
-        badge_px = QPixmap(_thumb_pixel_size(width, self._dpr),
-                           _thumb_pixel_size(16, self._dpr))
-        badge_px.setDevicePixelRatio(self._dpr)
-        badge_px.fill(Qt.GlobalColor.transparent)
-        painter = QPainter(badge_px)
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(bg))
-        painter.drawRoundedRect(QRect(0, 0, width, 16), 3, 3)
-        painter.setFont(badge_font)
-        painter.setPen(QColor("#ffffff"))
-        painter.drawText(QRect(0, 0, width, 16), Qt.AlignmentFlag.AlignCenter, display_text)
-        painter.end()
-        self._safety_px = badge_px
-
-    def _safety_rect(self) -> QRect:
-        if self._safety_px.isNull():
-            return QRect()
-        width, height = self._safety_size.width(), self._safety_size.height()
-        x = max(3, self.width() - width - 5)
-        y = 5
-        if not self._badge_px.isNull():
-            lineage_w = self._badge_px.width() / self._dpr
-            if x < 5 + lineage_w + 3:
-                y = 23
-        return QRect(x, y, width, height)
 
     def set_pixmap(self, px: QPixmap):
         if px.isNull():
@@ -5604,8 +6043,6 @@ class _ThumbCell(QWidget):
         inner = QRegion(self.rect().adjusted(3, 3, -3, -3))
         region = (outer - inner).united(
             QRect(0, self._size + 2, self.width(), 24))
-        if not self._safety_px.isNull():
-            region = region.united(self._safety_rect())
         pixel_size = _thumb_pixel_size(self._size, self._dpr)
         if not self._px.isNull() and (
                 self._px.hasAlphaChannel()
@@ -5837,6 +6274,32 @@ ANIM_KINDS = ("fade", "slide_lr", "slide_ud", "zoom", "pulse", "stripes")
 ANIM_DEFAULT_POOL = ("fade", "slide_lr", "slide_ud", "zoom", "pulse")
 
 
+class _ReactiveRippleWarpItem(QGraphicsPixmapItem):
+    def __init__(self):
+        super().__init__()
+        self.warp_ripples = []
+        self.warp_bands = 28
+
+    def paint(self, painter, option, widget=None):
+        px = self.pixmap()
+        if px.isNull() or not self.warp_ripples:
+            return
+        w, h = px.width(), px.height()
+        band_h = h / self.warp_bands
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+        for index in range(self.warp_bands):
+            y = index * band_h
+            distance = math.hypot(0.5, (y + band_h / 2.0) / h - 0.5)
+            shift = 0.0
+            for radius, strength, phase in self.warp_ripples:
+                influence = math.exp(-((distance - radius) / 0.065) ** 2)
+                shift += math.sin((y / h) * math.tau * 3.0 + phase) * influence * strength
+            dx = max(-w * 0.018, min(w * 0.018, w * 0.012 * shift))
+            painter.drawPixmap(
+                QRectF(dx, y, w, band_h + 0.5), px,
+                QRectF(0, y, w, band_h))
+
+
 class FullViewer(QDialog):
     """全画面画像ビューア"""
     _HIDE_DELAY = 2500
@@ -5845,6 +6308,10 @@ class FullViewer(QDialog):
     _REACTIVE_OUTLINE_CAP = 1280
     _REACTIVE_RIPPLE_CAP = 5
     _REACTIVE_PARTICLE_CAP = 20
+    _REACTIVE_PALETTE = (
+        (70, 190, 255), (255, 105, 220), (175, 125, 255),
+        (120, 255, 190), (255, 190, 90), (255, 120, 140),
+    )
 
     def __init__(self, parent, path: str, paths: list,
                  loop_mode: str = "loop", slideshow: bool = False,
@@ -5866,6 +6333,13 @@ class FullViewer(QDialog):
         self._ss_job: QTimer | None = None
         self._hmv_paused = False
         self._hmv_source_paths = list(paths)
+        self._hmv_playlist_worker = None
+        self._hmv_startup_filter = False
+        self._hmv_playlist_applied = False
+        self._hmv_start_pending = False
+        self._retired_hmv_workers = []
+        self._hmv_playlist_request = 0
+        self._hmv_playlist_options = None
         self._hide_timer = QTimer(self)
         self._hide_timer.setSingleShot(True)
         self._hide_timer.timeout.connect(self._hide_ui)
@@ -5873,6 +6347,10 @@ class FullViewer(QDialog):
         self._pix_loader: _PixmapLoader | None = None  # 非同期デコードローダー
         self._fit_loader: _PixmapLoader | None = None  # [v2.38.10] fit版ローダー(即時表示用)
         self._image_load_seq = 0
+        # 起動直後の連続 resizeEvent が同一デコードを再依頼して打ち消し合わさない
+        # ための進行中トラッカー (path, rot, seq)。完了/失敗/取り消しで解消される。
+        self._load_pending_key: tuple[str, int] | None = None
+        self._load_pending_seq = -1
         self._retired_image_loaders: list[_PixmapLoader] = []
 
         # 開いた時のウィンドウ状態を記録（全画面解除時に戻す）
@@ -5900,8 +6378,14 @@ class FullViewer(QDialog):
         self._voice_idx: int = 0
         self._voice_playing_path: str | None = None
         self._voice_boost_cache: dict = {}  # [v2.38.2] voice 100%超 temp 増幅のキャッシュ
+        self._voice_volume_timer = QTimer(self)
+        self._voice_volume_timer.setSingleShot(True)
+        self._voice_volume_timer.setInterval(150)
+        self._voice_volume_timer.timeout.connect(self._apply_live_voice_volume)
         self._music_on: bool = False
         self._audio_ready: bool = False
+        self._audio_warning = ""
+        self._audio_errors = {}
         # [v2.33] 波形同期（実ビート時刻追従）
         self._beat_times: list[float] = []        # 現 BGM 曲のビート時刻(秒)
         self._beat_slide_times: list[float] = []  # 拍数で間引いた送り時刻(秒)
@@ -5941,6 +6425,11 @@ class FullViewer(QDialog):
         self._reactive_outline_item = None
         self._reactive_outline_key = None
         self._reactive_outline_base = (1.0, 1.0)
+        self._reactive_outline_cache = {}
+        self._reactive_outline_base_px = None
+        self._reactive_color_index = 0
+        self._reactive_warp_item = None
+        self._reactive_warp_key = None
         self._reactive_flash_item = None
         self._reactive_ripples = []
         self._reactive_ripple_pool = []
@@ -6018,7 +6507,7 @@ class FullViewer(QDialog):
         self._ss_btn = tbtn("▶ スライド", T("スライド 再生 / 一時停止 (S)")); self._ss_btn.clicked.connect(self._toggle_ss)
         self._ss_stop_btn = tbtn("⏹", T("スライド 停止（先頭へ戻る）")); self._ss_stop_btn.clicked.connect(self._stop_ss)
         self._ss_stop_btn.setEnabled(False)
-        self._music_btn = tbtn("🎵 " + T("スライド音楽 OFF"), T("スライド音楽 ON"))
+        self._music_btn = tbtn("🎵 " + T("HMV OFF"), T("HMV ON"))
         self._music_btn.setCheckable(True)
         self._music_btn.setChecked(False)
         self._music_btn.clicked.connect(self._toggle_music)
@@ -6120,16 +6609,7 @@ class FullViewer(QDialog):
     # ── ウィンドウ初期化（画像サイズに合わせる） ─────────────────────────
     def _init_window(self):
         """起動後に画像サイズに合わせてウィンドウをリサイズし、画像を表示する。"""
-        audio_cfg = getattr(self, "_audio_cfg", None)
-        tag_filter = (audio_cfg is not None and audio_cfg("hmv_tag_filter", False)
-                      and self._hmv_selected_tags())
-        safety_filter = (audio_cfg is not None
-                         and audio_cfg("hmv_safety_mode", "all") != "all")
-        if (tag_filter or safety_filter) and self._hmv_filter_pending():
-            self._show_hmv_waiting()
-        elif (tag_filter or safety_filter) and self._hmv_metadata_ready():
-            if not self._apply_hmv_playlist(show_image=False):
-                self._fallback_hmv_filters(show_image=False)
+        self._hmv_startup_filter = False
         if not self._paths:
             return
         self._toolbar.layout().activate()
@@ -6342,6 +6822,8 @@ class FullViewer(QDialog):
 
     def _cancel_image_requests(self):
         self._image_load_seq += 1
+        self._load_pending_key = None
+        self._load_pending_seq = -1
         for attr in ("_pix_loader", "_fit_loader"):
             loader = getattr(self, attr, None)
             if loader is not None:
@@ -6361,6 +6843,8 @@ class FullViewer(QDialog):
         キャッシュにあれば即シグナルを発火。読み込み中はインジケータを表示。"""
         self._cancel_image_requests()
         request_id = self._image_load_seq
+        self._load_pending_key = (path, self._rot)
+        self._load_pending_seq = request_id
         self._overlay_item.hide()
         self._placeholder_path = None
 
@@ -6487,6 +6971,7 @@ class FullViewer(QDialog):
         if not self._is_current_image_request(path, request_id):
             return
         self._busy_timer.stop()
+        self._load_pending_key = None
         self._pix_loader = None        # 完了したので「待機中」状態を解除（_show_busy_overlay の判定材料）
         px = QPixmap.fromImage(qi)  # copy なし (Qt COW 管理)
         mw = self.parent()
@@ -6526,6 +7011,7 @@ class FullViewer(QDialog):
         if not self._is_current_image_request(path, request_id):
             return
         self._busy_timer.stop()
+        self._load_pending_key = None
         # [v2.05 FIX] D7: scene.clear() を廃止しピクスマップのみクリア
         self._finish_transition()
         self._placeholder_path = None
@@ -6633,13 +7119,6 @@ class FullViewer(QDialog):
         except (TypeError, ValueError):
             return 350
 
-    def _anim_pulse_beats(self) -> int:
-        # [v2.35.3] パルス 1 回の「ドクン」回数 (1/2/3)。既定 1 拍。
-        try:
-            return min(3, max(1, int(self._audio_cfg("ss_anim_pulse_beats", 1))))
-        except (TypeError, ValueError):
-            return 1
-
     def _anim_pool(self) -> tuple:
         """ランダム選択の対象になるアニメ種別（ユーザーが有効にしたもの）。"""
         raw = self._audio_cfg("ss_anim_pool", None)
@@ -6721,12 +7200,7 @@ class FullViewer(QDialog):
     def _start_transition(self, old_px: QPixmap, new_px: QPixmap, path: str | None = None):
         """旧→新の切替アニメを開始。dur<=0 は即時確定のみ。"""
         self._finish_transition()          # 前回の残りを確定
-        stop_reactive = getattr(self, "_stop_reactive", None)
-        if stop_reactive is not None:
-            stop_reactive()
         self._commit_new(new_px, path)     # 新画像を最終状態へ
-        self._reactive_timer.stop()
-        self._hide_reactive_outline()
         kind = self._anim_type()
         dur = self._anim_ms()
         if dur <= 0:
@@ -6829,9 +7303,7 @@ class FullViewer(QDialog):
             if fx is not None:
                 fx.setOpacity(1.0 - e)
         elif kind == "pulse":
-            # キック風: ドクンを n 回（拍数で選択, 既定1）。abs(sin) で n 個の膨らみ、終端は 1.0
-            n = self._anim_pulse_beats()
-            self._pix_item.setScale(1.0 + 0.15 * abs(math.sin(math.pi * n * e)))
+            self._pix_item.setScale(1.0 + 0.10 * math.sin(math.pi * e))
             if fx is not None:
                 fx.setOpacity(max(0.0, 1.0 - e * 1.8))
         elif kind == "stripes":
@@ -6912,14 +7384,14 @@ class FullViewer(QDialog):
         edm = self._reactive_edm()
         if glow_enabled:
             glow = edges.filter(ImageFilter.GaussianBlur(
-                max(3.0 if edm else 2.0, min(sw, sh) / (110.0 if edm else 160.0))))
-            glow_layer = Image.new("RGBA", (sw, sh), (70, 190, 255, 0))
-            glow_layer.putalpha(glow.point(lambda v: int(v * (0.95 if edm else 0.85))))
+                max(4.0 if edm else 2.0, min(sw, sh) / (80.0 if edm else 160.0))))
+            glow_layer = Image.new("RGBA", (sw, sh), (255, 255, 255, 0))
+            glow_layer.putalpha(glow.point(lambda v: int(v * (1.0 if edm else 0.9))))
             layers.append(glow_layer)
         if outline_enabled:
             core = edges.filter(ImageFilter.MaxFilter(5 if edm else 3)).filter(ImageFilter.GaussianBlur(0.55))
-            core_layer = Image.new("RGBA", (sw, sh), (225, 250, 255, 0))
-            core_layer.putalpha(core.point(lambda v: int(v * (0.9 if edm else 0.75))))
+            core_layer = Image.new("RGBA", (sw, sh), (255, 255, 255, 0))
+            core_layer.putalpha(core.point(lambda v: int(v * (0.98 if edm else 0.8))))
             layers.append(core_layer)
         if not layers:
             return QPixmap()
@@ -6933,11 +7405,21 @@ class FullViewer(QDialog):
     def _reactive_prepare_image(self, path: str | None, px: QPixmap):
         self._reactive_kick = 0.0
         self._recycle_reactive_transients()
+        if not self._reactive_enabled():
+            self._reactive_outline_key = None
+            self._reactive_outline_base_px = None
+            self._reactive_outline_cache.clear()
+            self._hide_reactive_outline()
+            if self._reactive_warp_item is not None:
+                self._reactive_warp_item.hide()
+                self._reactive_warp_item.warp_ripples = []
+            return
         flash = getattr(self, "_reactive_flash_item", None)
         if flash is not None and px is not None and not px.isNull():
             flash.setRect(QRectF(0, 0, px.width(), px.height()))
             flash.hide()
             flash.setOpacity(0.0)
+        self._prepare_reactive_warp(px)
         if px is None or px.isNull():
             self._hide_reactive_outline()
             return
@@ -6945,6 +7427,8 @@ class FullViewer(QDialog):
         want_glow = self._reactive_option("ss_reactive_glow", True)
         if not self._reactive_enabled() or not (want_outline or want_glow):
             self._reactive_outline_key = None
+            self._reactive_outline_base_px = None
+            self._reactive_outline_cache.clear()
             self._hide_reactive_outline()
             return
         key = (path, self._rot, want_outline, want_glow, self._reactive_edm(),
@@ -6956,15 +7440,18 @@ class FullViewer(QDialog):
             sy = px.height() / max(1, outline.height())
             self._reactive_outline_base = (sx, sy)
             self._set_reactive_outline_scale(sx, sy)
+            self._apply_reactive_outline_color()
             return
         try:
             outline = self._build_reactive_outline(px, want_outline, want_glow)
             if self._reactive_outline_item is None:
                 self._reactive_outline_item = QGraphicsPixmapItem()
-                self._reactive_outline_item.setZValue(7)
+                self._reactive_outline_item.setZValue(23)
                 self._reactive_outline_item.setTransformationMode(
                     Qt.TransformationMode.SmoothTransformation)
                 self._scene.addItem(self._reactive_outline_item)
+            self._reactive_outline_base_px = outline
+            self._reactive_outline_cache.clear()
             self._reactive_outline_item.setPixmap(outline)
             self._reactive_outline_item.setPos(0, 0)
             sx = px.width() / max(1, outline.width())
@@ -6972,10 +7459,35 @@ class FullViewer(QDialog):
             self._reactive_outline_base = (sx, sy)
             self._set_reactive_outline_scale(sx, sy)
             self._reactive_outline_key = key
+            if self._reactive_edm():
+                self._reactive_color_index = random.randrange(len(self._REACTIVE_PALETTE))
+            else:
+                self._reactive_color_index = 0
+            self._apply_reactive_outline_color()
             self._reactive_outline_item.hide()
         except Exception:
             self._reactive_outline_key = None
             self._hide_reactive_outline()
+
+    def _apply_reactive_outline_color(self):
+        item = self._reactive_outline_item
+        base = self._reactive_outline_base_px
+        if item is None or base is None or base.isNull():
+            return
+        index = self._reactive_color_index if self._reactive_edm() else 0
+        key = (self._reactive_outline_key, index)
+        tinted = self._reactive_outline_cache.get(key)
+        if tinted is None:
+            tinted = QPixmap(base.size())
+            tinted.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(tinted)
+            painter.drawPixmap(0, 0, base)
+            painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
+            painter.fillRect(tinted.rect(), QColor(*self._REACTIVE_PALETTE[index]))
+            painter.end()
+            self._reactive_outline_cache[key] = tinted
+        if item.pixmap().cacheKey() != tinted.cacheKey():
+            item.setPixmap(tinted)
 
     def _set_reactive_outline_scale(self, sx: float, sy: float):
         """非等比縮小とパルスを輪郭中央基準で適用する。"""
@@ -7034,9 +7546,9 @@ class FullViewer(QDialog):
     def _ensure_reactive_flash(self, w: int, h: int):
         if self._reactive_flash_item is None:
             self._reactive_flash_item = QGraphicsRectItem()
-            self._reactive_flash_item.setZValue(4)
+            self._reactive_flash_item.setZValue(20)
             self._reactive_flash_item.setPen(Qt.PenStyle.NoPen)
-            self._reactive_flash_item.setBrush(QColor(215, 240, 255))
+            self._reactive_flash_item.setBrush(QColor(245, 248, 255))
             self._scene.addItem(self._reactive_flash_item)
         self._reactive_flash_item.setRect(QRectF(0, 0, w, h))
         self._reactive_flash_item.hide()
@@ -7052,16 +7564,71 @@ class FullViewer(QDialog):
             item = self._reactive_ripple_pool.pop()
         else:
             item = QGraphicsEllipseItem()
-            item.setZValue(6)
+            item.setZValue(21)
             item.setBrush(Qt.BrushStyle.NoBrush)
             self._scene.addItem(item)
         edm = self._reactive_edm()
-        color = QColor(255, 105, 220) if edm and random.random() < 0.35 else QColor(105, 215, 255)
+        color = (QColor(*random.choice(self._REACTIVE_PALETTE)) if edm
+                 else QColor(105, 215, 255))
         item.setPen(QPen(color, max(1.0, min(w, h) * (0.006 if edm else 0.003))))
         item.setPos(w / 2.0, h / 2.0)
         item.setOpacity(0.0)
         item.show()
         self._reactive_ripples.append({"item": item, "age": 0.0, "strength": strength})
+
+    def _prepare_reactive_warp(self, px: QPixmap):
+        if (px is None or px.isNull() or not self._reactive_edm()
+                or not self._reactive_option("ss_reactive_ripple", True)):
+            if self._reactive_warp_item is not None:
+                self._reactive_warp_item.hide()
+                self._reactive_warp_item.warp_ripples = []
+            return
+        key = (px.cacheKey(), px.width(), px.height())
+        if self._reactive_warp_item is None:
+            self._reactive_warp_item = _ReactiveRippleWarpItem()
+            self._reactive_warp_item.setZValue(19)
+            self._reactive_warp_item.setTransformationMode(
+                Qt.TransformationMode.SmoothTransformation)
+            self._scene.addItem(self._reactive_warp_item)
+        if key != self._reactive_warp_key:
+            scale = min(1.0, 1280.0 / max(px.width(), px.height(), 1))
+            small = px.scaled(max(1, round(px.width() * scale)),
+                              max(1, round(px.height() * scale)),
+                              Qt.AspectRatioMode.IgnoreAspectRatio,
+                              Qt.TransformationMode.SmoothTransformation)
+            self._reactive_warp_item.setPixmap(small)
+            self._reactive_warp_item.setTransform(QTransform().scale(
+                px.width() / small.width(), px.height() / small.height()))
+            self._reactive_warp_item.setPos(0, 0)
+            self._reactive_warp_key = key
+        self._reactive_warp_item.hide()
+        self._reactive_warp_item.warp_ripples = []
+
+    def _update_reactive_warp(self, intensity: float, boost: float):
+        item = self._reactive_warp_item
+        if (item is None or not self._reactive_edm()
+                or not self._reactive_option("ss_reactive_ripple", True)
+                or not self._reactive_ripples):
+            if item is not None:
+                item.hide()
+                item.warp_ripples = []
+            return
+        w, h = self._pix_item.pixmap().width(), self._pix_item.pixmap().height()
+        if w <= 0 or h <= 0:
+            item.hide()
+            return
+        life = 1.1 if boost > 1.0 else 0.85
+        warps = []
+        for st in self._reactive_ripples[-3:]:
+            progress = st["age"] / life
+            radius = min(w, h) * ((0.12 if boost > 1.0 else 0.18)
+                                  + (0.75 if boost > 1.0 else 0.58) * progress)
+            strength = ((1.0 - progress) ** 1.4 * st["strength"]
+                        * intensity * min(1.5, boost))
+            warps.append((radius / max(1.0, min(w, h)), strength, st["age"] * 9.0))
+        item.warp_ripples = warps
+        item.setOpacity(0.9)
+        item.show()
 
     def _trigger_reactive_particles(self, strength: float):
         edm = self._reactive_edm()
@@ -7080,7 +7647,7 @@ class FullViewer(QDialog):
                 item = self._reactive_particle_pool.pop()
             else:
                 item = QGraphicsEllipseItem()
-                item.setZValue(8)
+                item.setZValue(22)
                 item.setPen(Qt.PenStyle.NoPen)
                 self._scene.addItem(item)
             item.setBrush(random.choice(palette) if edm else QColor(130, 225, 255))
@@ -7130,6 +7697,9 @@ class FullViewer(QDialog):
             item.hide()
         for item in self._reactive_particle_pool:
             item.hide()
+        if self._reactive_warp_item is not None:
+            self._reactive_warp_item.hide()
+            self._reactive_warp_item.warp_ripples = []
 
     def _reset_reactive_frame(self):
         self._reactive_timer.stop()
@@ -7169,7 +7739,6 @@ class FullViewer(QDialog):
         player = getattr(self, "_bgm_player", None)
         active = (self._reactive_enabled() and self._music_on and not self._hmv_paused
                   and player is not None and self._reactive_features is not None
-                  and getattr(self, "_anim_state", None) is None
                   and player.playbackState() == QMediaPlayer.PlaybackState.PlayingState)
         if active:
             if not self._reactive_timer.isActive():
@@ -7181,7 +7750,6 @@ class FullViewer(QDialog):
         player = getattr(self, "_bgm_player", None)
         if (player is None or not self._reactive_enabled() or not self._music_on
                 or self._hmv_paused or self._reactive_features is None
-                or getattr(self, "_anim_state", None) is not None
                 or player.playbackState() != QMediaPlayer.PlaybackState.PlayingState):
             self._reactive_timer.stop()
             self._reset_reactive_frame()
@@ -7224,15 +7792,21 @@ class FullViewer(QDialog):
         kick = self._reactive_kick
         trigger = beat_trigger or onset_trigger
         if trigger:
+            if self._reactive_edm() and (self._reactive_option("ss_reactive_outline", True)
+                                         or self._reactive_option("ss_reactive_glow", True)):
+                self._reactive_color_index = random.randrange(len(self._REACTIVE_PALETTE))
+                self._apply_reactive_outline_color()
             if self._reactive_option("ss_reactive_ripple", True):
                 self._trigger_reactive_ripple(max(0.3, kick))
             if self._reactive_option("ss_reactive_particles", True):
                 self._trigger_reactive_particles(max(0.25, kick))
 
+        target_scale = 1.0
         if self._reactive_option("ss_reactive_zoom", True):
-            self._reactive_view_scale = 1.0 + 0.11 * intensity * boost * kick
-        else:
-            self._reactive_view_scale = 1.0
+            target_scale += 0.010 * intensity * boost * kick
+        if self._reactive_option("ss_reactive_pulse", True):
+            target_scale += 0.006 * intensity * boost * kick
+        self._reactive_view_scale += (target_scale - self._reactive_view_scale) * 0.32
         self._apply_reactive_view()
 
         outline = self._reactive_outline_item
@@ -7243,8 +7817,8 @@ class FullViewer(QDialog):
                 opacity = intensity * boost * (0.2 + 0.78 * kick)
                 outline.show()
             elif self._reactive_option("ss_reactive_glow", True):
-                bounce = 1.0 + 0.005 * intensity * low
-                opacity = intensity * boost * (0.08 + 0.18 * low)
+                bounce = 1.0 + 0.008 * intensity * low
+                opacity = intensity * boost * (0.18 + 0.42 * low)
                 outline.show()
             else:
                 bounce = 1.0
@@ -7262,10 +7836,10 @@ class FullViewer(QDialog):
                                             self._pix_item.pixmap().height())
                 flash = self._reactive_flash_item
             safe = self._reactive_option("ss_reactive_flash_safe", True)
-            cap = 0.035 if safe else 0.08
-            opacity = cap * intensity * kick * (0.4 + 0.6 * rms)
+            cap = 0.16 if safe else 0.28
+            opacity = cap * intensity * boost * kick * (0.55 + 0.45 * rms)
             if safe:
-                opacity *= min(1.0, max(0.0, (kick - 0.35) / 0.45))
+                opacity *= min(1.0, max(0.0, (kick - 0.25) / 0.55))
             flash.setOpacity(max(0.0, min(cap, opacity)))
             if opacity > 0.001:
                 flash.show()
@@ -7290,6 +7864,7 @@ class FullViewer(QDialog):
             st["item"].setRect(QRectF(-radius, -radius, radius * 2, radius * 2))
             st["item"].setOpacity(
                 min(0.95, max(0.0, (1.0 - st["age"] / life) * 0.72 * intensity * boost * st["strength"])))
+        self._update_reactive_warp(intensity, boost)
         self._update_reactive_particles(dt, intensity)
 
     def _on_bgm_position_changed(self, position: int):
@@ -7319,7 +7894,7 @@ class FullViewer(QDialog):
                       Te("  ←→ナビ  Space=全画面")))
         self._info_lbl.setText("  ".join(parts))
 
-    def _show_hmv_waiting(self):
+    def _show_hmv_waiting(self, message: str = "", pause: bool = True):
         self._cancel_image_requests()
         try:
             self._finish_transition()
@@ -7327,22 +7902,30 @@ class FullViewer(QDialog):
             pass
         self._reset_reactive_frame()
         self._pix_item.setPixmap(QPixmap())
-        self._overlay_item.setPlainText(T("メタデータ読込中..."))
+        waiting_text = message or T("メタデータ読込中...")
+        self._overlay_item.setPlainText(waiting_text)
         br = self._overlay_item.boundingRect()
         sr = self._scene.sceneRect()
         self._overlay_item.setPos(
             sr.center().x() - br.width() / 2 if sr.width() > 0 else 100,
             sr.center().y() - br.height() / 2 if sr.height() > 0 else 100)
         self._overlay_item.show()
-        self._info_lbl.setText(T("メタデータ読込中..."))
+        self._info_lbl.setText(waiting_text)
         self._seekbar.setEnabled(False)
-        self._ss_btn.setEnabled(False)
-        if self._ss_running():
-            self._pause_ss()
+        if pause:
+            self._ss_btn.setEnabled(False)
+            if self._ss_running():
+                self._pause_ss()
 
     def _show_image(self):
         if not self._paths: return
-        if self._hmv_filter_pending():
+        if self._hmv_startup_filter:
+            self._show_hmv_waiting(T("HMV条件を適用中..."), pause=False)
+            return
+        if self._hmv_playlist_worker is not None:
+            self._show_hmv_waiting(T("HMV条件を適用中..."), pause=False)
+            return
+        if self._hmv_playlist_applied and self._hmv_filter_pending():
             self._show_hmv_waiting()
             return
         self._seekbar.setEnabled(True)
@@ -7352,8 +7935,17 @@ class FullViewer(QDialog):
         self._seekbar.setValue(self._idx)
         self._seek_lbl.setText(f"{self._idx+1}/{len(self._paths)}")
         self._set_image_info(path)
+        # 同一 (path, rot) のデコードが進行中は再依頼しない（実ウィンドウの
+        # show 直後の連続 resizeEvent によるデコードの打ち消し合いを防止。
+        # 完了・失敗・取り消し済みなら再依頼を通す）
+        key = (path, self._rot)
+        if (self._pix_item.pixmap().isNull() and key == self._load_pending_key
+                and self._load_pending_seq == self._image_load_seq):
+            return
         # 非同期デコード開始（キャッシュヒット時は即時描画、ミス時はローダー起動）
         self._load_pixmap_async(path)
+        self._load_pending_key = key
+        self._load_pending_seq = self._image_load_seq
 
     def _show_end_overlay(self, msg: str):
         """画像上にオーバーレイテキスト表示"""
@@ -7368,8 +7960,19 @@ class FullViewer(QDialog):
     def closeEvent(self, e):
         """ウィンドウを閉じる際にローダーをキャンセルしてリソースを解放する。
         [v2.05 FIX] T2: cancel() 後に wait() で確実にスレッド終了。"""
+        self._cancel_hmv_playlist()
+        for worker in list(self._retired_hmv_workers):
+            worker.cancel()
+            if worker.isRunning() and not worker.wait(2000):
+                worker.setParent(None)
+                _DETACHED_HMV_WORKERS.add(worker)
+                worker.finished.connect(lambda w=worker: _DETACHED_HMV_WORKERS.discard(w))
+            else:
+                worker.deleteLater()
+        self._retired_hmv_workers.clear()
         # [v2.38.1] 閉じる前に送り/アニメ/ビートのタイマーと音声を止める。
         # 後続コールバックが消えた scene へ触れるのと、音声だけ残り続けるのを防ぐ。
+        self._voice_volume_timer.stop()
         try:
             self._stop_beat_sync()
         except Exception:
@@ -7559,23 +8162,65 @@ class FullViewer(QDialog):
         except Exception:
             return default
 
+    def _resolved_audio_folder(self, kind: str) -> str:
+        configured = str(self._audio_cfg(f"ss_{kind}_folder", "") or "").strip()
+        resolved = resolve_audio_folder(configured, kind)
+        if resolved != configured:
+            mw = self.parent()
+            if mw is not None and hasattr(mw, "_cfg"):
+                mw._cfg[f"ss_{kind}_folder"] = resolved
+                try:
+                    save_cfg(mw._cfg)
+                except Exception:
+                    pass
+        return resolved
+
+    def _refresh_audio_warning(self):
+        if not HAS_MULTIMEDIA:
+            self._audio_warning = T("PySide6.QtMultimedia が無効")
+            return
+        warnings = []
+        for kind, label in (("bgm", T("BGM")), ("voice", T("音声"))):
+            if not self._audio_cfg(f"ss_{kind}_enabled", False):
+                continue
+            folder = getattr(self, f"_{kind}_folder", "")
+            queue = getattr(self, f"_{kind}_queue", [])
+            if not folder:
+                warnings.append(T("{0}: フォルダが未設定です").format(label))
+            elif not os.path.isdir(folder):
+                warnings.append(T("{0}: フォルダが見つかりません: {1}").format(label, folder))
+            elif not queue:
+                warnings.append(T("{0}: 再生可能なファイルがありません").format(label))
+            error = self._audio_errors.get(kind)
+            if error:
+                warnings.append(f"{label}: {error}")
+        if self._music_on and not QMediaDevices.audioOutputs():
+            warnings.append(T("音声出力デバイスが見つかりません"))
+        self._audio_warning = "\n".join(warnings)
+
+    def _on_audio_error(self, kind: str, error, player):
+        if error == QMediaPlayer.Error.NoError:
+            self._audio_errors.pop(kind, None)
+        else:
+            self._audio_errors[kind] = player.errorString() or str(error)
+        self._refresh_audio_warning()
+        self._update_music_button()
+
     def _init_audio_state(self):
         """設定から BGM/音声フォルダをスキャンしてランダムキューを作る。
         QMediaPlayer そのものは _ensure_audio_players で遅延作成。"""
-        bgm_folder = (self._audio_cfg("ss_bgm_folder", "") or "").strip()
-        voice_folder = (self._audio_cfg("ss_voice_folder", "") or "").strip()
+        bgm_folder = self._resolved_audio_folder("bgm")
+        voice_folder = self._resolved_audio_folder("voice")
         self._bgm_folder = bgm_folder
         self._voice_folder = voice_folder
         if not HAS_MULTIMEDIA:
+            self._refresh_audio_warning()
             return
         if bgm_folder and os.path.isdir(bgm_folder):
             self._bgm_queue = self._scan_audio_folder(bgm_folder)
         if voice_folder and os.path.isdir(voice_folder):
             self._voice_queue = self._scan_audio_folder(voice_folder)
-        self._music_on = bool(
-            (self._bgm_queue and self._audio_cfg("ss_bgm_enabled", False))
-            or (self._voice_queue and self._audio_cfg("ss_voice_enabled", False))
-        )
+        self._refresh_audio_warning()
 
     def _scan_audio_folder(self, folder: str) -> list[str]:
         """フォルダ内の音楽ファイルを列挙したパスリストを返す。再帰はしない（1階層のみ）。
@@ -7616,6 +8261,14 @@ class FullViewer(QDialog):
         self._voice_player = QMediaPlayer(self)
         self._voice_player.setAudioOutput(self._voice_output)
         self._voice_player.mediaStatusChanged.connect(self._on_voice_status)
+        self._bgm_player.errorOccurred.connect(
+            lambda error, player=self._bgm_player: self._on_audio_error("bgm", error, player))
+        self._voice_player.errorOccurred.connect(
+            lambda error, player=self._voice_player: self._on_audio_error("voice", error, player))
+        devices = QMediaDevices.audioOutputs()
+        for output in (self._bgm_output, self._voice_output):
+            if devices and output.device().isNull():
+                output.setDevice(devices[0])
         # 音量・速度適用
         self._bgm_output.setVolume(max(0.0, min(1.0, self._audio_cfg("ss_bgm_volume", 80) / 100.0)))
         self._voice_output.setVolume(max(0.0, min(1.0, self._audio_cfg("ss_voice_volume", 100) / 100.0)))
@@ -7625,10 +8278,13 @@ class FullViewer(QDialog):
         except Exception:
             pass
         self._audio_ready = True
+        self._refresh_audio_warning()
+        self._update_music_button()
 
     def apply_audio_settings(self):
         """設定変更を実行中の BGM/音声・キューへ即時反映する。"""
         bgm_changed, voice_changed = self._sync_audio_queues()
+        self._update_music_button()
         randomize = bool(self._audio_cfg("ss_audio_random", True))
         self._reorder_queue("_bgm_queue", "_bgm_idx", randomize)
         self._reorder_queue("_voice_queue", "_voice_idx", randomize)
@@ -7807,7 +8463,7 @@ class FullViewer(QDialog):
         """設定フォルダの変更・空キューを反映し、各キューの変更有無を返す。"""
         changed = {}
         for kind in ("bgm", "voice"):
-            folder = (self._audio_cfg(f"ss_{kind}_folder", "") or "").strip()
+            folder = self._resolved_audio_folder(kind)
             queue_attr = f"_{kind}_queue"
             idx_attr = f"_{kind}_idx"
             folder_attr = f"_{kind}_folder"
@@ -7824,6 +8480,7 @@ class FullViewer(QDialog):
             else:
                 changed[kind] = False
             setattr(self, folder_attr, folder)
+        self._refresh_audio_warning()
         return changed["bgm"], changed["voice"]
 
     def _start_audio_playback(self):
@@ -7867,10 +8524,12 @@ class FullViewer(QDialog):
     def _update_music_button(self):
         on = self._music_on
         self._music_btn.setChecked(on)
-        self._music_btn.setText("🎵 " + T("スライド音楽 ON" if on else "スライド音楽 OFF"))
-        self._music_btn.setToolTip(
-            T("スライド音楽 OFF" if on else "スライド音楽 ON")
-            if HAS_MULTIMEDIA else T("PySide6.QtMultimedia が無効"))
+        self._music_btn.setText("🎵 " + T("HMV ON" if on else "HMV OFF"))
+        tip = (T("HMV OFF" if on else "HMV ON")
+               if HAS_MULTIMEDIA else T("PySide6.QtMultimedia が無効"))
+        if self._audio_warning:
+            tip += "\n\n" + self._audio_warning
+        self._music_btn.setToolTip(tip)
 
     def _toggle_music(self):
         """🎵 = スライドショー音楽の Arm スイッチ (v2.34.1)。
@@ -7886,11 +8545,21 @@ class FullViewer(QDialog):
             if self._ss_running():          # 位置基準を失うので間隔を再計算
                 self._resync_ss()
         else:
+            self._sync_audio_queues()
+            bgm_active = bool(self._audio_cfg("ss_bgm_enabled", False)) and bool(self._bgm_queue)
+            voice_active = bool(self._audio_cfg("ss_voice_enabled", False)) and bool(self._voice_queue)
+            if not (bgm_active or voice_active):
+                self._music_on = False
+                self._update_music_button()
+                QMessageBox.warning(self, T("HMV"), self._audio_warning or T("再生可能な音声がありません"))
+                return
             self._music_on = True
             self._ensure_audio_players()
-            self._sync_audio_queues()
+            self._refresh_audio_warning()
             self._update_music_button()
-            if self._ss_running():          # 実行中なら今すぐ再生して同期
+            if self._audio_warning:
+                QMessageBox.warning(self, T("HMV"), self._audio_warning)
+            if self._ss_running():
                 self._start_audio_playback()
                 self._resync_ss()
 
@@ -7920,7 +8589,25 @@ class FullViewer(QDialog):
                 out.setVolume(min(1.0, value / 100.0))
             except Exception:
                 pass
+        if kind == "voice" and self._voice_player is not None and self._voice_playing_path:
+            self._voice_volume_timer.start()
         return value
+
+    def _apply_live_voice_volume(self):
+        player = self._voice_player
+        path = self._voice_playing_path
+        if player is None or not path:
+            return
+        source = self._prepare_voice_source(path)
+        if source == player.source():
+            return
+        state = player.playbackState()
+        position = player.position()
+        player.stop()
+        player.setSource(source)
+        player.setPosition(position)
+        if state == QMediaPlayer.PlaybackState.PlayingState:
+            player.play()
 
     def _set_speed(self, kind: str, rate: float):
         """再生速度を 0.5-2.0 で設定。cfg 更新 + save_cfg + QMediaPlayer 即時反映。"""
@@ -7975,11 +8662,18 @@ class FullViewer(QDialog):
         setattr(self, idx_attr, 0 if cur is not None else i)
 
     def _hmv_selected_tags(self) -> list[str]:
-        raw = self._audio_cfg("hmv_selected_tags", [])
-        if not isinstance(raw, (list, tuple)):
-            return []
-        return [str(x) for x in raw
-                if isinstance(x, str) and x.split(":", 1)[0] in HMV_TAG_CATEGORIES]
+        return sanitize_hmv_keys(self._audio_cfg("hmv_selected_tags", []))
+
+    def _hmv_recent_tags(self) -> list[str]:
+        return sanitize_hmv_keys(self._audio_cfg("hmv_recent_tags", []))[:30]
+
+    def _record_hmv_recent(self, keys):
+        recent = self._hmv_recent_tags()
+        for key in sanitize_hmv_keys(keys):
+            if key in recent:
+                recent.remove(key)
+            recent.insert(0, key)
+        self._save_hmv_option("hmv_recent_tags", recent[:30])
 
     def _hmv_group_by_tag(self) -> bool:
         return bool(self._audio_cfg("hmv_group_by_tag", True))
@@ -8034,31 +8728,32 @@ class FullViewer(QDialog):
             return True
 
     def _hmv_filter_pending(self) -> bool:
-        return self._hmv_filter_active() and not self._hmv_metadata_ready()
+        return self._hmv_playlist_worker is not None or (
+            self._hmv_filter_active() and not self._hmv_metadata_ready())
 
-    def _apply_hmv_playlist(self, show_image: bool = True, keep_current: bool = False) -> bool:
-        if self._hmv_filter_pending():
-            self._show_hmv_waiting()
-            self._refresh_hmv_tag_summary()
-            return True
-        enabled = bool(self._audio_cfg("hmv_tag_filter", False))
-        selected = self._hmv_selected_tags() if enabled else []
-        mode = self._hmv_safety_mode()
-        filtering = (enabled and bool(selected)) or mode != "all"
+    def _release_hmv_worker(self, worker):
+        if worker in self._retired_hmv_workers:
+            self._retired_hmv_workers.remove(worker)
+        worker.deleteLater()
+
+    def _cancel_hmv_playlist(self):
+        self._hmv_playlist_request += 1
+        self._hmv_playlist_options = None
+        worker = self._hmv_playlist_worker
+        self._hmv_playlist_worker = None
+        if worker is not None:
+            worker.cancel()
+            self._retired_hmv_workers.append(worker)
+            worker.finished.connect(lambda w=worker: self._release_hmv_worker(w))
+
+    def _set_hmv_playlist(self, playlist: list[str], reset_index: bool, show_image: bool):
         current = self._paths[self._idx] if self._paths and 0 <= self._idx < len(self._paths) else None
-        if filtering:
-            playlist = hmv_build_playlist(
-                self._hmv_source_paths, META.snapshot(), selected,
-                self._hmv_group_by_tag(), mode)
-            if not playlist:
-                return False
-        else:
-            playlist = list(self._hmv_source_paths)
         self._paths = playlist
+        self._hmv_playlist_applied = self._hmv_filter_active()
         self._seekbar.setRange(0, max(0, len(self._paths) - 1))
         self._seekbar.setEnabled(True)
         self._ss_btn.setEnabled(True)
-        if filtering and not keep_current:
+        if reset_index:
             self._idx = 0
         else:
             self._idx = self._paths.index(current) if current in self._paths else 0
@@ -8067,6 +8762,56 @@ class FullViewer(QDialog):
         if show_image and self._paths:
             self._show_image()
         self._refresh_hmv_tag_summary()
+
+    def _on_hmv_playlist_ready(self, request: int, playlist: list[str]):
+        if request != self._hmv_playlist_request:
+            return
+        options = self._hmv_playlist_options
+        start_pending = self._hmv_start_pending
+        self._hmv_start_pending = False
+        self._hmv_playlist_worker = None
+        self._hmv_playlist_options = None
+        if not playlist:
+            QMessageBox.information(self, T("HMV"), T("選択した条件に一致する画像がありません。"))
+            self._fallback_hmv_filters()
+            if start_pending:
+                QTimer.singleShot(0, self._start_ss)
+            return
+        if options is not None:
+            self._set_hmv_playlist(playlist, options[0], options[1])
+            if options[2] and not options[1] and self._paths:
+                self._show_image()
+        if start_pending:
+            QTimer.singleShot(0, self._start_ss)
+
+    def _apply_hmv_playlist(self, show_image: bool = True, keep_current: bool = False,
+                            show_when_ready: bool = False) -> bool:
+        self._hmv_playlist_applied = self._hmv_filter_active()
+        if self._hmv_filter_active() and not self._hmv_metadata_ready():
+            self._show_hmv_waiting()
+            self._refresh_hmv_tag_summary()
+            return True
+        enabled = bool(self._audio_cfg("hmv_tag_filter", False))
+        selected = self._hmv_selected_tags() if enabled else []
+        mode = self._hmv_safety_mode()
+        filtering = (enabled and bool(selected)) or mode != "all"
+        if filtering:
+            self._cancel_hmv_playlist()
+            request = self._hmv_playlist_request
+            self._hmv_playlist_options = (not keep_current, show_image, show_when_ready)
+            worker = HmvPlaylistWorker(
+                self._hmv_source_paths, META.snapshot(), selected,
+                self._hmv_group_by_tag(), mode, self)
+            self._hmv_playlist_worker = worker
+            worker.result_ready.connect(
+                lambda result, req=request: self._on_hmv_playlist_ready(req, result))
+            worker.finished.connect(worker.deleteLater)
+            worker.start()
+            self._show_hmv_waiting(T("HMV条件を適用中..."), pause=False)
+            self._refresh_hmv_tag_summary()
+            return True
+        self._cancel_hmv_playlist()
+        self._set_hmv_playlist(list(self._hmv_source_paths), False, show_image)
         return True
 
     def _sync_hmv_filter_ui(self):
@@ -8105,13 +8850,15 @@ class FullViewer(QDialog):
         self._sync_hmv_filter_ui()
 
     def _add_hmv_tags(self, keys):
+        incoming = sanitize_hmv_keys([keys] if isinstance(keys, str) else keys)
         selected = self._hmv_selected_tags()
-        for key in keys:
-            if isinstance(key, str) and key.split(":", 1)[0] in HMV_TAG_CATEGORIES and key not in selected:
+        for key in incoming:
+            if key not in selected:
                 selected.append(key)
         if not selected:
             return 0
         self._save_hmv_option("hmv_selected_tags", selected)
+        self._record_hmv_recent(incoming)
         self._save_hmv_option("hmv_tag_filter", True)
         checkbox = getattr(self, "_hmv_tag_filter", None)
         if checkbox is not None:
@@ -8143,8 +8890,7 @@ class FullViewer(QDialog):
             if key == "ss_anim_pool":
                 clean[key] = [x for x in value if x in ANIM_KINDS] if isinstance(value, (list, tuple)) else list(default)
             elif key == "hmv_selected_tags":
-                clean[key] = [x for x in value if isinstance(x, str)
-                              and x.split(":", 1)[0] in HMV_TAG_CATEGORIES] if isinstance(value, (list, tuple)) else []
+                clean[key] = sanitize_hmv_keys(value)
             elif key == "hmv_safety_mode":
                 clean[key] = value if value in HMV_SAFETY_MODES else default
             elif key == "ss_anim_type":
@@ -8164,8 +8910,6 @@ class FullViewer(QDialog):
                     number = max(0, min(300, number))
                 elif key == "ss_bgm_beat":
                     number = number if number in (1, 2, 4, 8, 16) else 4
-                elif key == "ss_anim_pulse_beats":
-                    number = max(1, min(3, number))
                 elif key == "ss_reactive_intensity":
                     number = max(0, min(100, number))
                 elif key == "ss_reactive_offset_ms":
@@ -8291,23 +9035,24 @@ class FullViewer(QDialog):
         popup = getattr(self, "_vol_popup", None)
         if popup is not None:
             popup.hide()
-        catalog = hmv_tag_catalog(self._hmv_source_paths, META.snapshot())
-        if not any(catalog.values()):
-            QMessageBox.information(self, T("HMV"), T("プロンプトタグが見つかりません。メタデータの読込を待ってから再試行してください。"))
-            return
-        dlg = HmvTagDialog(self, catalog, self._hmv_selected_tags())
+        dlg = HmvTagDialog(self, None, self._hmv_selected_tags(), self._hmv_recent_tags())
+        worker = HmvCatalogWorker(self._hmv_source_paths, META.snapshot(), dlg)
+        dlg._catalog_worker = worker
+        worker.result_ready.connect(dlg.set_catalog)
+        worker.finished.connect(worker.deleteLater)
+        worker.start()
         if dlg.exec() == QDialog.DialogCode.Accepted:
             selected = dlg.selected_keys()
             self._save_hmv_option("hmv_selected_tags", selected)
             self._save_hmv_option("hmv_tag_filter", bool(selected))
-            if not self._apply_hmv_playlist():
-                QMessageBox.information(self, T("HMV"), T("選択したタグに一致する画像がありません。"))
-                self._save_hmv_option("hmv_tag_filter", False)
-                self._apply_hmv_playlist()
-            checkbox = getattr(self, "_hmv_tag_filter", None)
-            if checkbox is not None:
-                checkbox.setChecked(bool(self._audio_cfg("hmv_tag_filter", False)))
-        dlg.deleteLater()
+            self._record_hmv_recent(selected)
+            self._apply_hmv_playlist()
+            self._sync_hmv_filter_ui()
+        worker.cancel()
+        if worker.isRunning():
+            worker.finished.connect(dlg.deleteLater)
+        else:
+            dlg.deleteLater()
 
     def _get_volume(self, kind: str) -> int:
         return int(self._audio_cfg(f"ss_{kind}_volume", 80 if kind == "bgm" else 100))
@@ -8762,6 +9507,9 @@ class FullViewer(QDialog):
 
     def _stop_ss(self):
         self._hmv_paused = False
+        if self._hmv_start_pending:
+            self._hmv_start_pending = False
+            self._cancel_hmv_playlist()
         if self._ss_job is not None:
             self._ss_job.stop()
         self._stop_beat_sync()
@@ -8796,6 +9544,14 @@ class FullViewer(QDialog):
         return max(16, int(self._ss_spin.value() * 1000 / 60))
 
     def _start_ss(self):
+        if self._hmv_start_pending:
+            return
+        if self._hmv_filter_active() and not self._hmv_playlist_applied:
+            self._hmv_start_pending = True
+            if not self._apply_hmv_playlist(
+                    show_image=False, keep_current=True, show_when_ready=True):
+                self._fallback_hmv_filters(show_image=False)
+            return
         if self._hmv_filter_pending():
             self._show_hmv_waiting()
             return
@@ -10076,45 +10832,57 @@ class _BeatDetectWorker(QThread):
 #  設定ダイアログ
 # ══════════════════════════════════════════════════════════════════════════════
 class HmvTagDialog(QDialog):
-    def __init__(self, parent, catalog: dict, selected: list[str]):
+    MAX_RESULTS = 80
+
+    def __init__(self, parent, catalog: dict | None, selected: list[str], recent=None):
         super().__init__(parent)
         self.setWindowTitle(T("HMV スライドタグ"))
-        self.resize(760, 640)
-        self._catalog = catalog
-        self._selected = set(selected)
+        self.resize(780, 660)
+        self._catalog = catalog or {category: [] for category in HMV_TAG_CATEGORIES}
+        self._catalog_ready = catalog is not None
+        self._catalog_keys = {
+            key for category in HMV_TAG_CATEGORIES
+            for _tag, _count, key in self._catalog.get(category, [])
+        }
+        self._recent = sanitize_hmv_keys(recent)[:30]
+        self._catalog_worker = None
         root = QVBoxLayout(self)
-        note = QLabel(T("プロンプトからタグを選びます。複数選択時は、同じタグの画像を3〜6枚のランダムな塊で表示します。"))
+        note = QLabel(T("タグを1行ずつ、またはカンマ区切りで入力します。例: tag:blue hair / lora:work_a / act:paizuri。複数タグは同じタグの画像を3〜6枚の塊で表示します。"))
         note.setWordWrap(True)
         root.addWidget(note)
         self._search = QLineEdit()
-        self._search.setPlaceholderText(T("タグを検索..."))
-        self._search.textChanged.connect(self._apply_search)
+        self._search.setPlaceholderText(T("タグを検索（候補は最大80件）..."))
         root.addWidget(self._search)
-        self._tree = QTreeWidget()
-        self._tree.setHeaderLabels([T("タグ（画像数）")])
-        self._tree.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
-        root.addWidget(self._tree, 1)
-        labels = {
-            "act": T("ACT"),
-            "lora": T("作品LoRA"),
-            "tag": T("キャラクター・一般タグ"),
-        }
-        for category in HMV_TAG_CATEGORIES:
-            entries = catalog.get(category, [])
-            if not entries:
-                continue
-            parent_item = QTreeWidgetItem([labels[category]])
-            parent_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
-            self._tree.addTopLevelItem(parent_item)
-            for tag, count, key in entries:
-                item = QTreeWidgetItem([f"{tag}  ({count})"])
-                item.setData(0, Qt.ItemDataRole.UserRole, key)
-                item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
-                              | Qt.ItemFlag.ItemIsUserCheckable)
-                item.setCheckState(0, Qt.CheckState.Checked if key in self._selected
-                                   else Qt.CheckState.Unchecked)
-                parent_item.addChild(item)
-            parent_item.setExpanded(True)
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(180)
+        self._search_timer.timeout.connect(lambda: self._apply_search(self._search.text()))
+        self._search.textChanged.connect(lambda _text: self._search_timer.start())
+        self._results = QListWidget()
+        self._results.setMaximumHeight(190)
+        self._results.itemClicked.connect(self._append_result)
+        self._results.itemActivated.connect(self._append_result)
+        root.addWidget(self._results, 1)
+        self._search_status = QLabel("")
+        self._search_status.setStyleSheet(f"color:{PAL['fg3']};")
+        root.addWidget(self._search_status)
+        selected_label = QLabel(T("選択タグ（入力）"))
+        root.addWidget(selected_label)
+        self._selected_edit = QPlainTextEdit()
+        self._selected_edit.setPlaceholderText(T("tag:blue hair\nlora:work_a\nact:paizuri"))
+        self._selected_edit.setPlainText("\n".join(sanitize_hmv_keys(selected)))
+        self._selected_edit.textChanged.connect(self._refresh_selection_status)
+        root.addWidget(self._selected_edit, 2)
+        self._selection_status = QLabel("")
+        self._selection_status.setStyleSheet(f"color:{PAL['fg3']};")
+        root.addWidget(self._selection_status)
+        recent_label = QLabel(T("最近使ったタグ（クリックで追加）"))
+        root.addWidget(recent_label)
+        self._recent_list = QListWidget()
+        self._recent_list.setMaximumHeight(125)
+        self._recent_list.itemClicked.connect(self._append_result)
+        self._recent_list.itemActivated.connect(self._append_result)
+        root.addWidget(self._recent_list)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
                                    | QDialogButtonBox.StandardButton.Cancel)
         clear_btn = QPushButton(T("選択をクリア"))
@@ -10123,35 +10891,82 @@ class HmvTagDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         root.addWidget(buttons)
+        self._populate_recent()
+        self._refresh_selection_status()
+        self._apply_search("")
+
+    def done(self, result):
+        if self._catalog_worker is not None:
+            self._catalog_worker.cancel()
+        super().done(result)
+
+    def _populate_recent(self):
+        self._recent_list.clear()
+        for key in self._recent:
+            item = QListWidgetItem(key)
+            item.setData(Qt.ItemDataRole.UserRole, key)
+            self._recent_list.addItem(item)
+
+    def set_catalog(self, catalog: dict):
+        self._catalog = catalog
+        self._catalog_ready = True
+        self._catalog_keys = {
+            key for category in HMV_TAG_CATEGORIES
+            for _tag, _count, key in catalog.get(category, [])
+        }
+        self._refresh_selection_status()
+        self._apply_search(self._search.text())
+
+    def _append_result(self, item: QListWidgetItem):
+        key = str(item.data(Qt.ItemDataRole.UserRole) or "")
+        if not key or key in self.selected_keys():
+            return
+        current = self._selected_edit.toPlainText().rstrip()
+        self._selected_edit.setPlainText((current + "\n" if current else "") + key)
+        cursor = self._selected_edit.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        self._selected_edit.setTextCursor(cursor)
 
     def _clear_selection(self):
-        for i in range(self._tree.topLevelItemCount()):
-            parent_item = self._tree.topLevelItem(i)
-            for j in range(parent_item.childCount()):
-                parent_item.child(j).setCheckState(0, Qt.CheckState.Unchecked)
+        self._selected_edit.clear()
 
     def _apply_search(self, text: str):
+        self._results.clear()
         query = norm_tag(text)
-        for i in range(self._tree.topLevelItemCount()):
-            parent_item = self._tree.topLevelItem(i)
-            category_match = query in norm_tag(parent_item.text(0))
-            visible = 0
-            for j in range(parent_item.childCount()):
-                child = parent_item.child(j)
-                show = not query or category_match or query in norm_tag(child.text(0))
-                child.setHidden(not show)
-                visible += int(show)
-            parent_item.setHidden(visible == 0)
+        if not query:
+            self._search_status.setText(T("検索語を入力してください。入力だけですぐに選択できます。"))
+            return
+        labels = {"act": T("ACT"), "lora": T("作品LoRA"), "tag": T("一般タグ")}
+        shown = 0
+        for category in HMV_TAG_CATEGORIES:
+            for tag, count, key in self._catalog.get(category, []):
+                if query not in norm_tag(tag) and query not in key:
+                    continue
+                item = QListWidgetItem(f"{tag}  ({count})  [{labels[category]}]")
+                item.setData(Qt.ItemDataRole.UserRole, key)
+                self._results.addItem(item)
+                shown += 1
+                if shown >= self.MAX_RESULTS:
+                    break
+            if shown >= self.MAX_RESULTS:
+                break
+        self._search_status.setText(T("{0}件を表示（最大{1}件）").format(shown, self.MAX_RESULTS))
 
     def selected_keys(self) -> list[str]:
-        selected: list[str] = []
-        for i in range(self._tree.topLevelItemCount()):
-            parent_item = self._tree.topLevelItem(i)
-            for j in range(parent_item.childCount()):
-                item = parent_item.child(j)
-                if item.checkState(0) == Qt.CheckState.Checked:
-                    selected.append(str(item.data(0, Qt.ItemDataRole.UserRole)))
-        return selected
+        return hmv_keys_from_text(self._selected_edit.toPlainText())
+
+    def unknown_keys(self) -> list[str]:
+        if not self._catalog_ready:
+            return []
+        return [key for key in self.selected_keys() if key not in self._catalog_keys]
+
+    def _refresh_selection_status(self):
+        keys = self.selected_keys()
+        if self._catalog_ready:
+            unknown = len(self.unknown_keys())
+            self._selection_status.setText(T("選択中: {0}タグ（未登録: {1}）").format(len(keys), unknown))
+        else:
+            self._selection_status.setText(T("選択中: {0}タグ（タグ候補を読込中）").format(len(keys)))
 
 
 class SettingsDialog(QDialog):
@@ -10253,19 +11068,6 @@ class SettingsDialog(QDialog):
         self._ss_anim_ms.setSpecialValueText(T("即時（アニメなし）"))
         self._ss_anim_ms.setValue(int(self._cfg.get("ss_anim_ms", 350)))
         fg.addRow(T("長さ:"), self._ss_anim_ms)
-        # [v2.35.3] パルスのドクン回数（1/2/3拍）。既定 1 拍。
-        self._ss_anim_pulse_beats = QComboBox()
-        for _n, _lab in ((1, T("1拍（ドクン1回）")), (2, T("2拍（ドクン2回）")),
-                         (3, T("3拍（ドクン3回）"))):
-            self._ss_anim_pulse_beats.addItem(_lab, _n)
-        try:
-            _pb = int(self._cfg.get("ss_anim_pulse_beats", 1))
-        except (TypeError, ValueError):
-            _pb = 1
-        _pi = self._ss_anim_pulse_beats.findData(max(1, min(3, _pb)))
-        if _pi >= 0:
-            self._ss_anim_pulse_beats.setCurrentIndex(_pi)
-        fg.addRow(T("パルス拍数（ドクン回数）:"), self._ss_anim_pulse_beats)
         l1.addWidget(grp1b)
         l1.addStretch()
         tabs.addTab(t1, "FullViewer")
@@ -10412,6 +11214,7 @@ class SettingsDialog(QDialog):
             reactive_options = (
                 ("ss_reactive_outline", "輪郭パルス", True),
                 ("ss_reactive_zoom", "拍ズーム", True),
+                ("ss_reactive_pulse", "キック同期パルス", True),
                 ("ss_reactive_ripple", "波紋", True),
                 ("ss_reactive_glow", "発光", True),
                 ("ss_reactive_particles", "パーティクル", True),
@@ -10432,7 +11235,7 @@ class SettingsDialog(QDialog):
             self._ss_reactive_offset_ms.setSuffix(" ms")
             self._ss_reactive_offset_ms.setValue(int(self._cfg.get("ss_reactive_offset_ms", 0)))
             reactive_form.addRow(T("同期オフセット:"), self._ss_reactive_offset_ms)
-            reactive_note = QLabel(T("輪郭パルスはスライド切替のパルスとは別の効果です。"))
+            reactive_note = QLabel(T("キック同期パルスと波紋はスライド切替中も1拍ごとに動作します。"))
             reactive_note.setWordWrap(True)
             reactive_note.setStyleSheet(f"color:{PAL['fg3']};font-size:8pt;")
             reactive_form.addRow(reactive_note)
@@ -10644,8 +11447,6 @@ class SettingsDialog(QDialog):
                 self._ss_anim_pool_widget.setFocus()
                 return
             self._cfg["ss_anim_pool"] = selected_pool
-        if hasattr(self, "_ss_anim_pulse_beats"):
-            self._cfg["ss_anim_pulse_beats"] = int(self._ss_anim_pulse_beats.currentData())
         self.accept()
 
     def focus_lora_tab(self):
@@ -11407,6 +12208,10 @@ class MainWindow(QMainWindow):
         """Allow the main window to shrink all the way down when the user wants it."""
         return QSize(0, 0)
 
+    @property
+    def _favorites(self) -> list:
+        return self._cfg.setdefault("favorites", [])
+
     def __init__(self, initial_path: str = ""):
         super().__init__()
         self.setWindowTitle(APP_NAME)
@@ -11437,7 +12242,6 @@ class MainWindow(QMainWindow):
         self._cur_meta: dict = {}
         self._ratings = load_ratings()
         self._quality_cache = {}
-        self._favorites: list = self._cfg.get("favorites", [])
         self._fixed_folder = get_default_image_folder()
         self._cur_folder: str = self._fixed_folder
         self._full_viewer: FullViewer | None = None
@@ -13761,9 +14565,11 @@ class MainWindow(QMainWindow):
             self._grid._refresh_cell_badges()
         viewer = getattr(self, "_full_viewer", None)
         if viewer is not None and viewer.isVisible():
-            if viewer._hmv_filter_active():
-                if not viewer._apply_hmv_playlist(keep_current=True):
-                    viewer._fallback_hmv_filters()
+            if (viewer._hmv_playlist_applied or viewer._hmv_start_pending
+                    or viewer._ss_running() or viewer._hmv_paused):
+                if not viewer._apply_hmv_playlist(
+                        keep_current=True, show_image=False, show_when_ready=True):
+                    viewer._fallback_hmv_filters(show_image=False)
             viewer._refresh_safety_info()
         # メタデータが全件揃った状態でフィルターを再適用する。
         # サブフォルダ読み込み等でファイル数が多い場合、_apply_filter() は
@@ -14456,18 +15262,22 @@ class MainWindow(QMainWindow):
         self._size_timer.start(300)
 
     def _add_hmv_tags(self, raw):
-        keys = raw.split(",") if isinstance(raw, str) else list(raw or [])
+        keys = sanitize_hmv_keys(raw.split(",") if isinstance(raw, str) else raw)
         viewer = getattr(self, "_full_viewer", None)
         if viewer is not None and viewer.isVisible():
             count = viewer._add_hmv_tags(keys)
         else:
-            selected = self._cfg.get("hmv_selected_tags", [])
-            if not isinstance(selected, list):
-                selected = []
+            selected = sanitize_hmv_keys(self._cfg.get("hmv_selected_tags", []))
             for key in keys:
-                if key.split(":", 1)[0] in HMV_TAG_CATEGORIES and key not in selected:
+                if key not in selected:
                     selected.append(key)
+            recent = sanitize_hmv_keys(self._cfg.get("hmv_recent_tags", []))[:30]
+            for key in keys:
+                if key in recent:
+                    recent.remove(key)
+                recent.insert(0, key)
             self._cfg["hmv_selected_tags"] = selected
+            self._cfg["hmv_recent_tags"] = recent[:30]
             self._cfg["hmv_tag_filter"] = bool(selected)
             save_cfg(self._cfg)
             count = len(selected)
